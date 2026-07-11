@@ -1,0 +1,34 @@
+name: schurcorr
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+
+  # Core numerical libraries
+  - numpy
+  - scipy
+  - matplotlib
+  - sympy
+
+  # Testing
+  - pytest
+  - pytest-cov
+
+  # Cross-checks
+  - statsmodels
+
+  # Interactive work
+  - ipython
+  - jupyterlab
+
+  # Code quality
+  - black
+  - ruff
+  - mypy
+
+  - pip
+
+  - pip:
+      - -e .

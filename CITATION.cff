@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+
+title: schurcorr
+
+authors:
+  - family-names: Erben
+    given-names: Thomas
+
+version: 0.1.0
+
+license: BSD-3-Clause
+
+message: >
+  If you use this software, please cite the accompanying paper.
