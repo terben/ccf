@@ -3,21 +3,16 @@ import schurcorr as sc
 alpha = [0.2, -0.3, 0.4]
 r = sc.from_pacf(alpha)
 
-lo, hi = sc.admissible_bounds(r)
+lower, upper = sc.admissible_bounds(r)
 
 print("r =", r)
-print("lower =", lo)
-print("upper =", hi)
+print("lower =", lower)
+print("upper =", upper)
 print("x =", sc.sh_coordinates(r))
 print("admissible =", sc.check_admissibility(r))
+print("invalid =", sc.check_admissibility([0.9, -0.9]))
 
-
-# import schurcorr as sc
-#
-# alpha = [0.2, -0.3, 0.4]
-# r = sc.from_pacf(alpha)
-# alpha_back = sc.pacf(r)
-#
-# print("r =", r)
-# print("alpha_back =", alpha_back)
-# print("logJ =", sc.log_jacobian(alpha))
+try:
+    sc.check_admissibility(r, atol=-1.0)
+except ValueError as error:
+    print(error)

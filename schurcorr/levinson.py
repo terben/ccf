@@ -1,50 +1,92 @@
 """
-Levinson-Durbin recursions for Toeplitz correlation matrices.
+Levinson--Durbin recursions for Toeplitz correlation matrices.
 
-This module provides the numerical core of the schurcorr package.
+This module provides the numerical core of the :mod:`schurcorr` package.
 It implements the bijection between normalized correlation coefficients
-and partial autocorrelation coefficients (PACFs).
 
-The notation follows Section 4 of the accompanying paper.
+    r = (r_1, ..., r_N)
+
+and partial autocorrelation coefficients
+
+    alpha = (alpha_1, ..., alpha_N).
+
+The notation follows the accompanying paper.
 """
 
 from __future__ import annotations
 
 import warnings
+from typing import overload
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 from .types import LevinsonInfo
 
 
+FloatArray = NDArray[np.float64]
+
 _TOL = 1.0e-12
 
 
-def _as_1d_float_array(x: ArrayLike, name: str) -> np.ndarray:
-    arr = np.asarray(x, dtype=float)
+def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
+    """
+    Convert an array-like input to a contiguous one-dimensional float array.
 
-    if arr.ndim != 1:
+    Parameters
+    ----------
+    x
+        Input values.
+    name
+        Argument name used in error messages.
+
+    Returns
+    -------
+    numpy.ndarray
+        Contiguous one-dimensional array with double-precision floating
+        point entries.
+
+    Raises
+    ------
+    ValueError
+        If the input is not one-dimensional.
+    """
+    array = np.asarray(x, dtype=np.float64)
+
+    if array.ndim != 1:
         raise ValueError(f"{name} must be a one-dimensional array.")
 
-    return arr
+    return np.ascontiguousarray(array)
 
 
 class _LevinsonState:
     """
-    Internal representation of a positive Toeplitz correlation matrix.
+    Internal representation of a Levinson--Durbin recursion.
 
-    The state may be constructed either from correlation coefficients
-    or from partial autocorrelations.
+    The state may be constructed either from normalized correlation
+    coefficients or from partial autocorrelation coefficients.
+
+    Parameters
+    ----------
+    r
+        Normalized correlation coefficients ``(r_1, ..., r_N)``.
+    alpha
+        Partial autocorrelation coefficients
+        ``(alpha_1, ..., alpha_N)``.
+    sigma2
+        Innovation variances
+        ``(sigma_0^2, ..., sigma_N^2)``.
+    predictor_coefficients
+        Predictor coefficients at each recursion order.
     """
 
     def __init__(
         self,
         *,
-        r: np.ndarray,
-        alpha: np.ndarray,
-        sigma2: np.ndarray,
-        predictor_coefficients: list[np.ndarray],
+        r: FloatArray,
+        alpha: FloatArray,
+        sigma2: FloatArray,
+        predictor_coefficients: list[FloatArray],
     ) -> None:
         self.r = r
         self.alpha = alpha
@@ -53,17 +95,20 @@ class _LevinsonState:
 
     @classmethod
     def from_correlations(cls, r: ArrayLike) -> "_LevinsonState":
-        r = _as_1d_float_array(r, "r")
-        n_max = r.size
+        """
+        Construct the recursion state from correlation coefficients.
+        """
+        r_array = _asarray1d(r, name="r")
+        n_max = r_array.size
 
-        alpha: list[float] = []
-        sigma2: list[float] = [1.0]
-        predictors: list[np.ndarray] = []
+        alpha_values: list[float] = []
+        sigma2_values: list[float] = [1.0]
+        predictors: list[FloatArray] = []
 
-        phi = np.empty(0, dtype=float)
+        phi = np.empty(0, dtype=np.float64)
 
         for n in range(1, n_max + 1):
-            if sigma2[-1] <= _TOL:
+            if sigma2_values[-1] <= _TOL:
                 warnings.warn(
                     "Degenerate Toeplitz matrix encountered; "
                     "returning the non-degenerate part only.",
@@ -73,24 +118,35 @@ class _LevinsonState:
                 break
 
             if n == 1:
-                a_n = r[0]
+                alpha_n = float(r_array[0])
             else:
-                prediction = np.dot(phi, r[n - 2 :: -1])
-                a_n = (r[n - 1] - prediction) / sigma2[-1]
+                prediction = float(
+                    np.dot(
+                        phi,
+                        r_array[n - 2 :: -1],
+                    )
+                )
+                alpha_n = (
+                    float(r_array[n - 1]) - prediction
+                ) / sigma2_values[-1]
 
-            if abs(a_n) > 1.0 + _TOL:
+            if abs(alpha_n) > 1.0 + _TOL:
                 raise ValueError(
                     "Input correlations are not admissible: "
-                    f"computed abs(alpha_{n}) = {abs(a_n):.6g} > 1."
+                    f"computed abs(alpha_{n}) = "
+                    f"{abs(alpha_n):.6g} > 1."
                 )
 
-            if abs(a_n) >= 1.0:
-                a_n = float(np.sign(a_n))
-                alpha.append(a_n)
-                predictors.append(np.append(phi, a_n))
+            if abs(alpha_n) >= 1.0:
+                alpha_n = float(np.sign(alpha_n))
+                alpha_values.append(alpha_n)
 
-                sigma_next = 0.0
-                sigma2.append(sigma_next)
+                phi_boundary = np.append(phi, alpha_n)
+                predictors.append(
+                    np.asarray(phi_boundary, dtype=np.float64)
+                )
+
+                sigma2_values.append(0.0)
 
                 warnings.warn(
                     "Boundary point encountered with abs(alpha_n) = 1; "
@@ -101,89 +157,176 @@ class _LevinsonState:
                 break
 
             if n == 1:
-                phi_new = np.array([a_n], dtype=float)
+                phi_new = np.array(
+                    [alpha_n],
+                    dtype=np.float64,
+                )
             else:
-                phi_new = np.empty(n, dtype=float)
-                phi_new[:-1] = phi - a_n * phi[::-1]
-                phi_new[-1] = a_n
+                phi_new = np.empty(n, dtype=np.float64)
+                phi_new[:-1] = phi - alpha_n * phi[::-1]
+                phi_new[-1] = alpha_n
 
-            sigma_next = sigma2[-1] * (1.0 - a_n * a_n)
-            if sigma_next < 0.0 and sigma_next > -_TOL:
+            sigma2_next = (
+                sigma2_values[-1]
+                * (1.0 - alpha_n * alpha_n)
+            )
+
+            if sigma2_next < 0.0 and sigma2_next > -_TOL:
                 warnings.warn(
-                    "Innovation variance became slightly negative due to "
-                    "roundoff and was clamped to zero.",
+                    "Innovation variance became slightly negative due "
+                    "to roundoff and was clamped to zero.",
                     RuntimeWarning,
                     stacklevel=2,
                 )
-                sigma_next = 0.0
+                sigma2_next = 0.0
 
-            alpha.append(float(a_n))
-            sigma2.append(float(sigma_next))
+            alpha_values.append(float(alpha_n))
+            sigma2_values.append(float(sigma2_next))
             predictors.append(phi_new.copy())
+
             phi = phi_new
 
+        number_computed = len(alpha_values)
+
         return cls(
-            r=r[: len(alpha)].copy(),
-            alpha=np.asarray(alpha, dtype=float),
-            sigma2=np.asarray(sigma2, dtype=float),
+            r=r_array[:number_computed].copy(),
+            alpha=np.asarray(
+                alpha_values,
+                dtype=np.float64,
+            ),
+            sigma2=np.asarray(
+                sigma2_values,
+                dtype=np.float64,
+            ),
             predictor_coefficients=predictors,
         )
 
     @classmethod
     def from_pacf(cls, alpha: ArrayLike) -> "_LevinsonState":
-        alpha = _as_1d_float_array(alpha, "alpha")
+        """
+        Construct the recursion state from partial autocorrelations.
+        """
+        alpha_array = _asarray1d(alpha, name="alpha")
 
-        if np.any(np.abs(alpha) >= 1.0):
-            raise ValueError("All PACF coefficients must satisfy abs(alpha_n) < 1.")
+        if np.any(np.abs(alpha_array) >= 1.0):
+            raise ValueError(
+                "All PACF coefficients must satisfy abs(alpha_n) < 1."
+            )
 
         r_values: list[float] = []
-        sigma2: list[float] = [1.0]
-        predictors: list[np.ndarray] = []
+        sigma2_values: list[float] = [1.0]
+        predictors: list[FloatArray] = []
 
-        phi = np.empty(0, dtype=float)
+        phi = np.empty(0, dtype=np.float64)
 
-        for n, a_n in enumerate(alpha, start=1):
+        for n, alpha_n in enumerate(alpha_array, start=1):
+            alpha_n = float(alpha_n)
+
             if n == 1:
-                phi_new = np.array([a_n], dtype=float)
-                r_n = a_n
+                phi_new = np.array(
+                    [alpha_n],
+                    dtype=np.float64,
+                )
+                r_n = alpha_n
             else:
-                phi_new = np.empty(n, dtype=float)
-                phi_new[:-1] = phi - a_n * phi[::-1]
-                phi_new[-1] = a_n
+                phi_new = np.empty(n, dtype=np.float64)
+                phi_new[:-1] = phi - alpha_n * phi[::-1]
+                phi_new[-1] = alpha_n
 
-                r_with_zero = np.concatenate(([1.0], np.asarray(r_values)))
-                r_n = np.dot(phi_new, r_with_zero[n - 1 :: -1])
+                r_with_zero = np.concatenate(
+                    (
+                        np.array([1.0], dtype=np.float64),
+                        np.asarray(
+                            r_values,
+                            dtype=np.float64,
+                        ),
+                    )
+                )
 
-            sigma_next = sigma2[-1] * (1.0 - a_n * a_n)
-            if sigma_next < 0.0 and sigma_next > -_TOL:
+                r_n = float(
+                    np.dot(
+                        phi_new,
+                        r_with_zero[n - 1 :: -1],
+                    )
+                )
+
+            sigma2_next = (
+                sigma2_values[-1]
+                * (1.0 - alpha_n * alpha_n)
+            )
+
+            if sigma2_next < 0.0 and sigma2_next > -_TOL:
                 warnings.warn(
-                    "Innovation variance became slightly negative due to "
-                    "roundoff and was clamped to zero.",
+                    "Innovation variance became slightly negative due "
+                    "to roundoff and was clamped to zero.",
                     RuntimeWarning,
                     stacklevel=2,
                 )
-                sigma_next = 0.0
+                sigma2_next = 0.0
 
             r_values.append(float(r_n))
-            sigma2.append(float(sigma_next))
+            sigma2_values.append(float(sigma2_next))
             predictors.append(phi_new.copy())
+
             phi = phi_new
 
         return cls(
-            r=np.asarray(r_values, dtype=float),
-            alpha=alpha.copy(),
-            sigma2=np.asarray(sigma2, dtype=float),
+            r=np.asarray(
+                r_values,
+                dtype=np.float64,
+            ),
+            alpha=alpha_array.copy(),
+            sigma2=np.asarray(
+                sigma2_values,
+                dtype=np.float64,
+            ),
             predictor_coefficients=predictors,
         )
+
+
+@overload
+def pacf(
+    r: ArrayLike,
+    *,
+    return_info: bool = False,
+) -> FloatArray:
+    ...
+
+
+@overload
+def pacf(
+    r: ArrayLike,
+    *,
+    return_info: bool,
+) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
+    ...
 
 
 def pacf(
     r: ArrayLike,
     *,
     return_info: bool = False,
-):
+) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
     """
-    Compute partial autocorrelation coefficients from correlation coefficients.
+    Compute partial autocorrelations from correlation coefficients.
+
+    Parameters
+    ----------
+    r
+        Normalized correlation coefficients
+        ``(r_1, ..., r_N)``.
+    return_info
+        If ``True``, also return innovation variances and predictor
+        coefficients.
+
+    Returns
+    -------
+    alpha
+        Partial autocorrelation coefficients
+        ``(alpha_1, ..., alpha_N)``.
+    info
+        Additional recursion information. Returned only when
+        ``return_info=True``.
     """
     state = _LevinsonState.from_correlations(r)
 
@@ -196,13 +339,49 @@ def pacf(
     return state.alpha
 
 
+@overload
 def from_pacf(
     alpha: ArrayLike,
     *,
     return_info: bool = False,
-):
+) -> FloatArray:
+    ...
+
+
+@overload
+def from_pacf(
+    alpha: ArrayLike,
+    *,
+    return_info: bool,
+) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
+    ...
+
+
+def from_pacf(
+    alpha: ArrayLike,
+    *,
+    return_info: bool = False,
+) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
     """
-    Reconstruct correlation coefficients from partial autocorrelations.
+    Reconstruct correlations from partial autocorrelations.
+
+    Parameters
+    ----------
+    alpha
+        Partial autocorrelation coefficients
+        ``(alpha_1, ..., alpha_N)``.
+    return_info
+        If ``True``, also return innovation variances and predictor
+        coefficients.
+
+    Returns
+    -------
+    r
+        Normalized correlation coefficients
+        ``(r_1, ..., r_N)``.
+    info
+        Additional recursion information. Returned only when
+        ``return_info=True``.
     """
     state = _LevinsonState.from_pacf(alpha)
 
@@ -215,45 +394,100 @@ def from_pacf(
     return state.r
 
 
-def fisher(alpha: ArrayLike) -> np.ndarray:
+def fisher(alpha: ArrayLike) -> FloatArray:
     """
     Map partial autocorrelations to Fisher coordinates.
+
+    The transformation is
+
+    ``y_n = arctanh(alpha_n)``.
+
+    Parameters
+    ----------
+    alpha
+        Partial autocorrelation coefficients.
+
+    Returns
+    -------
+    numpy.ndarray
+        Fisher coordinates.
     """
-    alpha = _as_1d_float_array(alpha, "alpha")
+    alpha_array = _asarray1d(alpha, name="alpha")
 
-    if np.any(np.abs(alpha) >= 1.0):
-        raise ValueError("All PACF coefficients must satisfy abs(alpha_n) < 1.")
+    if np.any(np.abs(alpha_array) >= 1.0):
+        raise ValueError(
+            "All PACF coefficients must satisfy abs(alpha_n) < 1."
+        )
 
-    return np.arctanh(alpha)
+    return np.arctanh(alpha_array)
 
 
-def inverse_fisher(y: ArrayLike) -> np.ndarray:
+def inverse_fisher(y: ArrayLike) -> FloatArray:
     """
     Map Fisher coordinates back to partial autocorrelations.
+
+    The inverse transformation is
+
+    ``alpha_n = tanh(y_n)``.
+
+    Parameters
+    ----------
+    y
+        Fisher coordinates.
+
+    Returns
+    -------
+    numpy.ndarray
+        Partial autocorrelation coefficients.
     """
-    y = _as_1d_float_array(y, "y")
-    return np.tanh(y)
+    y_array = _asarray1d(y, name="y")
+    return np.tanh(y_array)
 
 
-def innovation_variances(alpha: ArrayLike) -> np.ndarray:
+def innovation_variances(alpha: ArrayLike) -> FloatArray:
     """
     Compute innovation variances from partial autocorrelations.
+
+    The recursion is
+
+    ``sigma_n^2 = sigma_(n-1)^2 * (1 - alpha_n^2)``
+
+    with ``sigma_0^2 = 1``.
+
+    Parameters
+    ----------
+    alpha
+        Partial autocorrelation coefficients.
+
+    Returns
+    -------
+    numpy.ndarray
+        Innovation variances
+        ``(sigma_0^2, ..., sigma_N^2)``.
     """
-    alpha = _as_1d_float_array(alpha, "alpha")
+    alpha_array = _asarray1d(alpha, name="alpha")
 
-    if np.any(np.abs(alpha) > 1.0):
-        raise ValueError("All PACF coefficients must satisfy abs(alpha_n) <= 1.")
+    if np.any(np.abs(alpha_array) > 1.0):
+        raise ValueError(
+            "All PACF coefficients must satisfy abs(alpha_n) <= 1."
+        )
 
-    sigma2 = np.empty(alpha.size + 1, dtype=float)
+    sigma2 = np.empty(
+        alpha_array.size + 1,
+        dtype=np.float64,
+    )
     sigma2[0] = 1.0
 
-    for n, a_n in enumerate(alpha, start=1):
-        sigma2[n] = sigma2[n - 1] * (1.0 - a_n * a_n)
+    for n, alpha_n in enumerate(alpha_array, start=1):
+        sigma2[n] = (
+            sigma2[n - 1]
+            * (1.0 - alpha_n * alpha_n)
+        )
 
         if sigma2[n] < 0.0 and sigma2[n] > -_TOL:
             warnings.warn(
-                "Innovation variance became slightly negative due to "
-                "roundoff and was clamped to zero.",
+                "Innovation variance became slightly negative due "
+                "to roundoff and was clamped to zero.",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -264,25 +498,61 @@ def innovation_variances(alpha: ArrayLike) -> np.ndarray:
 
 def log_jacobian(alpha: ArrayLike) -> float:
     """
-    Compute the logarithm of the Jacobian determinant of alpha -> r.
+    Compute the logarithm of the Jacobian determinant of ``alpha -> r``.
+
+    For ``N`` partial autocorrelations, the determinant is
+
+    ``prod_{k=1}^{N-1} (1 - alpha_k^2)^(N-k)``.
+
+    Parameters
+    ----------
+    alpha
+        Partial autocorrelation coefficients.
+
+    Returns
+    -------
+    float
+        Natural logarithm of the Jacobian determinant.
     """
-    alpha = _as_1d_float_array(alpha, "alpha")
+    alpha_array = _asarray1d(alpha, name="alpha")
 
-    if np.any(np.abs(alpha) >= 1.0):
-        raise ValueError("All PACF coefficients must satisfy abs(alpha_n) < 1.")
+    if np.any(np.abs(alpha_array) >= 1.0):
+        raise ValueError(
+            "All PACF coefficients must satisfy abs(alpha_n) < 1."
+        )
 
-    n = alpha.size
+    n = alpha_array.size
 
     if n <= 1:
         return 0.0
 
-    weights = np.arange(n - 1, 0, -1, dtype=float)
+    weights = np.arange(
+        n - 1,
+        0,
+        -1,
+        dtype=np.float64,
+    )
 
-    return float(np.sum(weights * np.log1p(-alpha[:-1] ** 2)))
+    return float(
+        np.sum(
+            weights
+            * np.log1p(-alpha_array[:-1] ** 2)
+        )
+    )
 
 
 def jacobian(alpha: ArrayLike) -> float:
     """
-    Compute the Jacobian determinant of the map alpha -> r.
+    Compute the Jacobian determinant of the map ``alpha -> r``.
+
+    Parameters
+    ----------
+    alpha
+        Partial autocorrelation coefficients.
+
+    Returns
+    -------
+    float
+        Jacobian determinant.
     """
     return float(np.exp(log_jacobian(alpha)))
