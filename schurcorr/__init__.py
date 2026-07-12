@@ -9,32 +9,32 @@ Companion package for the paper
 
 The package provides routines for
 
-- Levinson-Durbin forward recursion
-- inverse recursion
-- Schneider-Hartlap admissible bounds
-- Fisher coordinates
-- Jacobians
+- Levinson--Durbin forward recursion from correlations to PACFs,
+- inverse recursion from PACFs to correlations,
+- Schneider--Hartlap admissible bounds and coordinates,
+- Fisher coordinates,
+- innovation variances,
+- Jacobian determinants.
 """
 
 from .levinson import (
-    pacf,
-    from_pacf,
     fisher,
-    inverse_fisher,
+    from_pacf,
     innovation_variances,
+    inverse_fisher,
     jacobian,
     log_jacobian,
+    pacf,
 )
-
 from .sh_bounds import (
     admissible_bounds,
-    sh_coordinates,
     check_admissibility,
+    sh_coordinates,
 )
 
 __all__ = [
-    "forward",
-    "inverse",
+    "pacf",
+    "from_pacf",
     "fisher",
     "inverse_fisher",
     "innovation_variances",
@@ -45,4 +45,4 @@ __all__ = [
     "check_admissibility",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
