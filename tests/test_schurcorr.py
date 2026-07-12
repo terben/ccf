@@ -1,11 +1,10 @@
 import numpy as np
-
-import schurcorr as sc
-
-import numpy as np
+import sympy as sp
 import pytest
-
 import schurcorr as sc
+
+from schurcorr import symbolic
+from schurcorr import symbolic_fast
 
 
 def test_pacf_roundtrip():
@@ -94,3 +93,104 @@ def test_log_jacobian_matches_jacobian():
     j = sc.jacobian(alpha)
 
     np.testing.assert_allclose(np.log(j), log_j, rtol=1e-12, atol=1e-12)
+
+
+from schurcorr.symbolic import (
+    admissible_bounds_symbolic,
+    pacf_symbolic,
+    toeplitz_matrix,
+    verify_x_equals_alpha,
+)
+
+def test_symbolic_toeplitz_matrix():
+    r1, r2 = sp.symbols("r1 r2", real=True)
+
+    expected = sp.Matrix(
+        [
+            [1, r1, r2],
+            [r1, 1, r1],
+            [r2, r1, 1],
+        ]
+    )
+
+    assert toeplitz_matrix(3) == expected
+
+
+def test_symbolic_pacf_second_order():
+    r1, r2 = sp.symbols("r1 r2", real=True)
+
+    expected = (r2 - r1**2) / (1 - r1**2)
+
+    assert sp.simplify(pacf_symbolic(2) - expected) == 0
+
+
+def test_symbolic_second_order_bounds():
+    r1 = sp.symbols("r1", real=True)
+
+    r_lower, r_upper = admissible_bounds_symbolic(2)
+
+    assert sp.simplify(r_lower - (2 * r1**2 - 1)) == 0
+    assert sp.simplify(r_upper - 1) == 0
+
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_symbolic_sh_coordinate_equals_pacf(order):
+    assert verify_x_equals_alpha(order) == 0
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_fast_symbolic_pacf_matches_reference(order):
+    difference = (
+        symbolic_fast.pacf_symbolic(order, simplify="cancel")
+        - symbolic.pacf_symbolic(order)
+    )
+
+    assert sp.cancel(difference) == 0
+
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_fast_symbolic_bounds_match_reference(order):
+    lower_fast, upper_fast = (
+        symbolic_fast.admissible_bounds_symbolic(
+            order,
+            simplify="cancel",
+        )
+    )
+    lower_reference, upper_reference = (
+        symbolic.admissible_bounds_symbolic(order)
+    )
+
+    assert sp.cancel(lower_fast - lower_reference) == 0
+    assert sp.cancel(upper_fast - upper_reference) == 0
+
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_fast_symbolic_sh_coordinate_equals_pacf(order):
+    assert symbolic_fast.verify_x_equals_alpha(order) == 0
+
+@pytest.mark.parametrize("order", [1, 2, 3, 5, 10, 15])
+def test_compact_symbolic_sh_coordinate_equals_pacf(order):
+    assert (
+        symbolic_fast.verify_compact_x_equals_alpha(order)
+        == 0
+    )
+
+
+def test_compact_symbolic_system_size():
+    system = symbolic_fast.compact_symbolic_system(15)
+
+    assert len(system.alpha) == 15
+    assert len(system.sigma2) == 16
+    assert len(system.predictor_coefficients) == 15
+
+
+def test_compact_symbolic_definitions_are_ordered():
+    system = symbolic_fast.compact_symbolic_system(6)
+    defined = set()
+    correlations = set(system.correlations)
+
+    for equation in system.definitions:
+        allowed = defined | correlations
+        dependencies = equation.rhs.free_symbols
+
+        assert dependencies <= allowed
+        defined.add(equation.lhs)
