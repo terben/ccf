@@ -16,14 +16,30 @@ The notation follows the accompanying paper.
 from __future__ import annotations
 
 import warnings
+from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 
 FloatArray = NDArray[np.float64]
+BoundaryMode = Literal["raise", "warn", "extend"]
 
 _TOL = 1.0e-12
+
+
+class SingularToeplitzError(Exception):
+    """
+    Raised when the Levinson--Durbin recursion reaches a singular
+    Toeplitz matrix, ``sigma_n^2 = 0``, while ``at_boundary='raise'``.
+
+    At this point the angle between the two endpoint residuals that
+    defines ``alpha_n`` is undefined (one residual is the zero
+    vector), so the ``r <-> alpha`` bijection breaks down. This is
+    distinct from a :class:`ValueError` on malformed or inadmissible
+    input: it signals a boundary reached *during* an otherwise valid
+    recursion.
+    """
 
 
 def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
@@ -91,9 +107,25 @@ class _LevinsonState:
         self.predictor_coefficients = predictor_coefficients
 
     @classmethod
-    def from_correlations(cls, r: ArrayLike) -> "_LevinsonState":
+    def from_correlations(
+        cls,
+        r: ArrayLike,
+        *,
+        at_boundary: BoundaryMode = "raise",
+    ) -> "_LevinsonState":
         """
         Construct the recursion state from correlation coefficients.
+
+        Parameters
+        ----------
+        r
+            Normalized correlation coefficients ``(r_1, ..., r_N)``.
+        at_boundary
+            Behaviour when the recursion reaches a singular Toeplitz
+            matrix (``sigma_n^2 = 0``): ``'raise'`` raises
+            :class:`SingularToeplitzError`; ``'warn'`` clamps, warns,
+            and returns the non-degenerate part only. ``'extend'`` is
+            handled by the caller (see :func:`pacf`).
         """
         r_array = _asarray1d(r, name="r")
         n_max = r_array.size
@@ -106,6 +138,15 @@ class _LevinsonState:
 
         for n in range(1, n_max + 1):
             if sigma2_values[-1] <= _TOL:
+                if at_boundary == "raise":
+                    raise SingularToeplitzError(
+                        f"The Toeplitz matrix of order {n - 1} is "
+                        f"singular (sigma_{n - 1}^2 = 0); the r <-> "
+                        "alpha bijection breaks down at this point. "
+                        "Pass at_boundary='warn' to obtain the "
+                        "truncated result or at_boundary='extend' for "
+                        "the recurrence-forced continuation."
+                    )
                 warnings.warn(
                     "Degenerate Toeplitz matrix encountered; "
                     "returning the non-degenerate part only.",
@@ -135,6 +176,17 @@ class _LevinsonState:
                 )
 
             if abs(alpha_n) >= 1.0:
+                if at_boundary == "raise":
+                    raise SingularToeplitzError(
+                        f"sigma_{n}^2 = 0 reached at index {n} "
+                        f"(alpha_{n} = {np.sign(alpha_n):+.0f}); the "
+                        "r <-> alpha bijection breaks down at this "
+                        "point. Pass at_boundary='warn' to obtain the "
+                        "boundary-inclusive truncated result or "
+                        "at_boundary='extend' for the recurrence-"
+                        "forced continuation."
+                    )
+
                 alpha_n = float(np.sign(alpha_n))
                 alpha_values.append(alpha_n)
 
@@ -281,7 +333,11 @@ class _LevinsonState:
         )
 
 
-def pacf(r: ArrayLike) -> FloatArray:
+def pacf(
+    r: ArrayLike,
+    *,
+    at_boundary: BoundaryMode = "raise",
+) -> FloatArray:
     """
     Compute partial autocorrelations from correlation coefficients.
 
@@ -290,14 +346,50 @@ def pacf(r: ArrayLike) -> FloatArray:
     r
         Normalized correlation coefficients
         ``(r_1, ..., r_N)``.
+    at_boundary
+        Behaviour when the recursion reaches a singular Toeplitz
+        matrix, i.e. ``sigma_n^2 = 0`` for some ``n <= N`` (see
+        :class:`SingularToeplitzError`).
+
+        - ``'raise'`` (default): raise :class:`SingularToeplitzError`.
+          The PACF/bijection view and the ``r``-sequence view disagree
+          at this boundary, so the default forces the caller to
+          decide explicitly how to proceed.
+        - ``'warn'``: clamp, emit a ``RuntimeWarning``, and return the
+          non-degenerate part of ``alpha`` only (its length is then
+          less than ``N``).
+        - ``'extend'``: return a full-length ``alpha`` in which the
+          coefficients past the boundary are the unique continuation
+          forced by the Toeplitz structure (see
+          :func:`schurcorr.sh_bounds.extend_at_boundary`). These
+          boundary coefficients are exactly ``+1`` or ``-1`` and are
+          *not* interior PACF values in ``(-1, 1)``.
 
     Returns
     -------
     alpha
         Partial autocorrelation coefficients
         ``(alpha_1, ..., alpha_N)``.
+
+    Raises
+    ------
+    SingularToeplitzError
+        If ``at_boundary='raise'`` (the default) and the recursion
+        reaches a singular Toeplitz matrix.
     """
-    state = _LevinsonState.from_correlations(r)
+    if at_boundary not in ("raise", "warn", "extend"):
+        raise ValueError(
+            "at_boundary must be one of 'raise', 'warn', 'extend'; "
+            f"got {at_boundary!r}."
+        )
+
+    if at_boundary == "extend":
+        raise NotImplementedError(
+            "at_boundary='extend' is not yet implemented; it will "
+            "delegate to schurcorr.sh_bounds.extend_at_boundary()."
+        )
+
+    state = _LevinsonState.from_correlations(r, at_boundary=at_boundary)
     return state.alpha
 
 

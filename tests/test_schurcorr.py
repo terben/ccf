@@ -15,6 +15,47 @@ def test_pacf_roundtrip():
     np.testing.assert_allclose(alpha_back, alpha, rtol=1e-12, atol=1e-12)
 
 
+def test_pacf_default_raises_at_boundary():
+    r = np.array([1.0, 0.5, 0.3])
+
+    with pytest.raises(sc.SingularToeplitzError):
+        sc.pacf(r)
+
+
+def test_pacf_warn_at_boundary_returns_truncated():
+    r = np.array([1.0, 0.5, 0.3])
+
+    with pytest.warns(RuntimeWarning):
+        alpha = sc.pacf(r, at_boundary="warn")
+
+    np.testing.assert_allclose(alpha, [1.0])
+
+
+def test_pacf_extend_at_boundary_not_implemented():
+    r = np.array([1.0, 0.5, 0.3])
+
+    with pytest.raises(NotImplementedError):
+        sc.pacf(r, at_boundary="extend")
+
+
+def test_pacf_invalid_at_boundary_raises_value_error():
+    alpha = np.array([0.2, -0.3, 0.4])
+    r = sc.from_pacf(alpha)
+
+    with pytest.raises(ValueError):
+        sc.pacf(r, at_boundary="bogus")
+
+
+def test_pacf_not_at_boundary_unaffected_by_at_boundary():
+    alpha = np.array([0.2, -0.3, 0.4])
+    r = sc.from_pacf(alpha)
+
+    np.testing.assert_allclose(sc.pacf(r), alpha, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(
+        sc.pacf(r, at_boundary="warn"), alpha, rtol=1e-12, atol=1e-12
+    )
+
+
 def test_fisher_roundtrip():
     alpha = np.array([0.2, -0.3, 0.4])
 

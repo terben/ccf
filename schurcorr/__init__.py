@@ -18,6 +18,7 @@ The package provides routines for
 """
 
 from .levinson import (
+    SingularToeplitzError,
     fisher,
     from_pacf,
     innovation_variances,
@@ -43,6 +44,7 @@ __all__ = [
     "admissible_bounds",
     "sh_coordinates",
     "check_admissibility",
+    "SingularToeplitzError",
 ]
 
 __version__ = "0.1.2"

@@ -75,7 +75,7 @@ def admissible_bounds(
     correlation coefficients.
     """
     r_array = _asarray1d(r, name="r")
-    state = _LevinsonState.from_correlations(r_array)
+    state = _LevinsonState.from_correlations(r_array, at_boundary="warn")
 
     number_computed = state.r.size
 
