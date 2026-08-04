@@ -393,6 +393,10 @@ def _random_batch(rng, n_samples=5, n=6):
 
 
 def test_batched_from_pacf_matches_looped_1d():
+    # The batched path is vectorized across rows (a different
+    # summation order than the scalar per-row path's np.dot), so this
+    # is a tight-tolerance comparison, not exact equality -- see the
+    # Notes in schurcorr.levinson._pacf_2d_fast.
     rng = np.random.default_rng(0)
     alpha = _random_batch(rng)
 
@@ -400,10 +404,11 @@ def test_batched_from_pacf_matches_looped_1d():
     r_loop = np.stack([sc.from_pacf(row) for row in alpha])
 
     assert r_batch.shape == alpha.shape
-    np.testing.assert_array_equal(r_batch, r_loop)
+    np.testing.assert_allclose(r_batch, r_loop, rtol=1e-14, atol=1e-14)
 
 
 def test_batched_pacf_matches_looped_1d():
+    # Same summation-order caveat as test_batched_from_pacf_matches_looped_1d.
     rng = np.random.default_rng(1)
     alpha = _random_batch(rng)
     r = sc.from_pacf(alpha)
@@ -412,7 +417,7 @@ def test_batched_pacf_matches_looped_1d():
     alpha_loop = np.stack([sc.pacf(row) for row in r])
 
     assert alpha_batch.shape == r.shape
-    np.testing.assert_array_equal(alpha_batch, alpha_loop)
+    np.testing.assert_allclose(alpha_batch, alpha_loop, rtol=1e-13, atol=1e-13)
     np.testing.assert_allclose(alpha_batch, alpha, rtol=1e-12, atol=1e-12)
 
 
@@ -491,6 +496,92 @@ def test_batched_from_pacf_reports_offending_sample():
 def test_pacf_invalid_ndim_raises_value_error():
     with pytest.raises(ValueError):
         sc.pacf(np.zeros((2, 2, 2)))
+
+
+# --- Batch vectorization: fast path (interior batches) vs. fallback -------
+
+
+def test_pacf_2d_fast_path_used_for_interior_batch():
+    from schurcorr.levinson import _pacf_2d_fast
+
+    rng = np.random.default_rng(11)
+    alpha = rng.uniform(-0.7, 0.7, size=(50, 10))
+    r = sc.from_pacf(alpha)
+
+    assert _pacf_2d_fast(r) is not None
+
+
+def test_pacf_2d_fast_path_bails_on_boundary_row():
+    from schurcorr.levinson import _pacf_2d_fast
+
+    r = np.array([
+        [0.2, 0.1, 0.05],
+        [1.0, 0.5, 0.3],
+    ])
+
+    assert _pacf_2d_fast(r) is None
+
+
+def test_batched_pacf_and_from_pacf_large_scale_match_looped_1d():
+    # A larger, well-conditioned batch, comparing the vectorized fast
+    # path against the per-row scalar loop. Deliberately away from the
+    # numerically fragile bound~1 regime (see figure_roundtrip.py /
+    # Panel A): near that regime, the recursion itself amplifies even
+    # ULP-level perturbations, so batch-vs-loop agreement legitimately
+    # degrades regardless of implementation -- not exercised here.
+    rng = np.random.default_rng(12)
+    alpha = rng.uniform(-0.5, 0.5, size=(2000, 15))
+
+    r_batch = sc.from_pacf(alpha)
+    r_loop = np.stack([sc.from_pacf(row) for row in alpha])
+    np.testing.assert_allclose(r_batch, r_loop, rtol=1e-11, atol=1e-11)
+
+    alpha_batch = sc.pacf(r_batch)
+    alpha_loop = np.stack([sc.pacf(row) for row in r_batch])
+    np.testing.assert_allclose(alpha_batch, alpha_loop, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(alpha_batch, alpha, rtol=1e-9, atol=1e-9)
+
+
+def test_batched_pacf_fallback_matches_per_row_semantics():
+    # A batch where one row hits the boundary must give exactly the
+    # same result as before the fast path was introduced (raise,
+    # warn+NaN-pad, extend), since it falls back to the untouched
+    # per-row scalar loop.
+    r_mixed = np.array([
+        [0.2, 0.1, 0.05, 0.02],
+        [1.0, 1.0, 1.0, 1.0],
+        [0.3, -0.2, 0.1, 0.05],
+    ])
+
+    with pytest.raises(sc.SingularToeplitzError, match="sample 1"):
+        sc.pacf(r_mixed)
+
+    with pytest.warns(RuntimeWarning):
+        alpha_warn = sc.pacf(r_mixed, at_boundary="warn")
+
+    assert alpha_warn[1, 0] == 1.0
+    assert np.all(np.isnan(alpha_warn[1, 1:]))
+    np.testing.assert_allclose(alpha_warn[0], sc.pacf(r_mixed[0]))
+    np.testing.assert_allclose(alpha_warn[2], sc.pacf(r_mixed[2]))
+
+    with pytest.warns(RuntimeWarning):
+        alpha_ext = sc.pacf(r_mixed, at_boundary="extend")
+
+    np.testing.assert_allclose(alpha_ext[1], [1.0, 1.0, 1.0, 1.0])
+
+
+def test_from_pacf_2d_never_needs_fallback_near_boundary():
+    # abs(alpha_n) < 1 strictly guarantees sigma2 stays positive, so
+    # the vectorized batch path for from_pacf has no boundary case to
+    # fall back on, even for alpha very close to +/-1.
+    alpha = np.array([
+        [0.999999, -0.5, 0.1],
+        [-0.999999, 0.999999, -0.1],
+    ])
+
+    r_batch = sc.from_pacf(alpha)
+    r_loop = np.stack([sc.from_pacf(row) for row in alpha])
+    np.testing.assert_allclose(r_batch, r_loop, rtol=1e-9, atol=1e-9)
 
 
 def test_innovation_variances():
