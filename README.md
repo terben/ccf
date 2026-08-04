@@ -27,6 +27,7 @@ pip install -e ".[test]"
 * SciPy
 * SymPy
 * Matplotlib
+* mpmath
 
 ## License
 

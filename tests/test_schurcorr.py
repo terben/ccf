@@ -1,3 +1,4 @@
+import mpmath as mp
 import numpy as np
 import scipy.linalg as sla
 import sympy as sp
@@ -198,6 +199,114 @@ def test_pacf_extend_batched():
 
     np.testing.assert_allclose(alpha_batch[0], [0.2, -0.3, 0.4])
     np.testing.assert_allclose(alpha_batch[1], [1.0, 1.0, 1.0])
+
+
+# --- mpmath backend ---------------------------------------------------------
+
+
+def test_from_pacf_mpmath_matches_float64():
+    alpha = [0.2, -0.3, 0.4]
+
+    r_mp = sc.from_pacf(alpha, backend="mpmath")
+    r_f64 = sc.from_pacf(np.array(alpha))
+
+    assert all(isinstance(x, mp.mpf) for x in r_mp)
+    np.testing.assert_allclose(
+        [float(x) for x in r_mp], r_f64, rtol=1e-12, atol=1e-12
+    )
+
+
+def test_pacf_mpmath_matches_float64():
+    alpha = [0.2, -0.3, 0.4]
+    r = sc.from_pacf(alpha, backend="mpmath")
+
+    alpha_back_mp = sc.pacf(r, backend="mpmath")
+    alpha_back_f64 = sc.pacf(np.array([float(x) for x in r]))
+
+    assert all(isinstance(x, mp.mpf) for x in alpha_back_mp)
+    np.testing.assert_allclose(
+        [float(x) for x in alpha_back_mp],
+        alpha_back_f64,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
+def test_pacf_mpmath_roundtrip_high_order():
+    rng = np.random.default_rng(7)
+    alpha = rng.uniform(-0.9, 0.9, size=60).tolist()
+    dps = sc.recommended_dps(len(alpha), safety_margin=30)
+
+    r = sc.from_pacf(alpha, backend="mpmath", dps=dps)
+    alpha_back = sc.pacf(r, backend="mpmath", dps=dps)
+
+    for a, a_back in zip(alpha, alpha_back):
+        assert abs(mp.mpf(a) - a_back) < mp.mpf("1e-12")
+
+
+def test_recommended_dps_matches_formula():
+    assert sc.recommended_dps(100) == 69
+    assert sc.recommended_dps(100, target_exponent=-13, safety_margin=11) == 69
+
+
+def test_pacf_mpmath_default_raises_at_boundary():
+    r = [1.0, 0.5, 0.3]
+
+    with pytest.raises(sc.SingularToeplitzError):
+        sc.pacf(r, backend="mpmath")
+
+
+def test_pacf_mpmath_warn_returns_truncated():
+    r = [1.0, 0.5, 0.3]
+
+    with pytest.warns(RuntimeWarning):
+        alpha = sc.pacf(r, backend="mpmath", at_boundary="warn")
+
+    assert len(alpha) == 1
+    assert alpha[0] == mp.mpf(1)
+
+
+def test_pacf_mpmath_extend_not_supported():
+    r = [1.0, 0.5, 0.3]
+
+    with pytest.raises(ValueError, match="extend"):
+        sc.pacf(r, backend="mpmath", at_boundary="extend")
+
+
+def test_pacf_mpmath_rejects_2d_input():
+    r = np.array([[0.2, 0.1], [0.3, -0.1]])
+
+    with pytest.raises(ValueError):
+        sc.pacf(r, backend="mpmath")
+
+
+def test_from_pacf_mpmath_rejects_invalid_alpha():
+    with pytest.raises(ValueError):
+        sc.from_pacf([0.2, 1.5], backend="mpmath")
+
+
+def test_pacf_invalid_backend_raises_value_error():
+    with pytest.raises(ValueError):
+        sc.pacf(np.array([0.2, -0.3]), backend="bogus")
+
+
+def test_dps_rejected_for_float64_backend():
+    with pytest.raises(ValueError):
+        sc.pacf(np.array([0.2, -0.3]), dps=50)
+
+    with pytest.raises(ValueError):
+        sc.from_pacf(np.array([0.2, -0.3]), dps=50)
+
+
+def test_pacf_mpmath_custom_dps():
+    alpha_in = [0.2, -0.3, 0.4]
+    r = sc.from_pacf(alpha_in, backend="mpmath", dps=50)
+    alpha = sc.pacf(r, backend="mpmath", dps=50)
+
+    assert mp.mp.dps != 50  # workdps must not leak into the global context
+    np.testing.assert_allclose(
+        [float(x) for x in alpha], alpha_in, rtol=1e-12, atol=1e-12
+    )
 
 
 # --- Batched (2-D) interface ---------------------------------------------

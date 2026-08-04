@@ -17,6 +17,7 @@ The package provides routines for
 - Jacobian determinants.
 """
 
+from ._levinson_mp import recommended_dps
 from .levinson import (
     SingularToeplitzError,
     fisher,
@@ -46,6 +47,7 @@ __all__ = [
     "sh_coordinates",
     "check_admissibility",
     "extend_at_boundary",
+    "recommended_dps",
     "SingularToeplitzError",
 ]
 

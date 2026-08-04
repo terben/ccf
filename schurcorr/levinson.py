@@ -24,6 +24,7 @@ from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
 BoundaryMode = Literal["raise", "warn", "extend"]
+Backend = Literal["float64", "mpmath"]
 
 _TOL = 1.0e-12
 
@@ -70,6 +71,42 @@ def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
         raise ValueError(f"{name} must be a one-dimensional array.")
 
     return np.ascontiguousarray(array)
+
+
+def _as_sequence_1d(x: ArrayLike, *, name: str) -> list:
+    """
+    Validate 1-D sequence input without forcing ``float64`` precision.
+
+    Used for ``backend='mpmath'`` input that may already carry
+    ``mpmath.mpf`` values (e.g. the output of a prior
+    ``from_pacf(..., backend='mpmath')`` call): unlike
+    :func:`_asarray1d`, this does not round-trip through a
+    ``float64`` array, which would silently discard everything past
+    ``float64`` precision.
+
+    Parameters
+    ----------
+    x
+        Input values.
+    name
+        Argument name used in error messages.
+
+    Returns
+    -------
+    list
+        The input as a plain Python list, elements unchanged.
+
+    Raises
+    ------
+    ValueError
+        If the input is not one-dimensional.
+    """
+    array = np.asarray(x, dtype=object)
+
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a one-dimensional array.")
+
+    return list(array)
 
 
 def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
@@ -373,8 +410,10 @@ class _LevinsonState:
 def pacf(
     r: ArrayLike,
     *,
+    backend: Backend = "float64",
     at_boundary: BoundaryMode = "raise",
-) -> FloatArray:
+    dps: int | None = None,
+) -> FloatArray | list:
     """
     Compute partial autocorrelations from correlation coefficients.
 
@@ -386,6 +425,17 @@ def pacf(
         sequences with shape ``(n_samples, N)``. For a 2-D batch, the
         recursion is applied independently, row by row (the same
         recursion as for the 1-D case, not a different algorithm).
+        ``backend='mpmath'`` only supports 1-D input.
+    backend
+        ``'float64'`` (default) runs the plain ``numpy`` bijection in
+        this module. ``'mpmath'`` runs the arbitrary-precision
+        recursion in :mod:`schurcorr._levinson_mp` instead, a
+        numerical-conditioning stress test rather than a faster or
+        more "correct" version of the same computation -- see that
+        module's docstring. With ``backend='mpmath'``, the return
+        value is a ``list`` of ``mpmath.mpf`` (not downcast to
+        ``float64``), and only ``at_boundary in ('raise', 'warn')``
+        is supported.
     at_boundary
         Behaviour when the recursion reaches a singular Toeplitz
         matrix, i.e. ``sigma_n^2 = 0`` for some ``n <= N`` (see
@@ -410,12 +460,19 @@ def pacf(
           interior PACF values in ``(-1, 1)`` -- ``sigma_n^2`` stays
           exactly zero from that order on, so the bijection with an
           interior ``alpha_n`` no longer applies.
+    dps
+        Working precision in decimal places, only used when
+        ``backend='mpmath'``. If ``None`` (default),
+        ``recommended_dps(len(r))`` is used.
 
     Returns
     -------
     alpha
-        Partial autocorrelation coefficients, with the same shape as
-        ``r``: ``(alpha_1, ..., alpha_N)`` or ``(n_samples, N)``.
+        Partial autocorrelation coefficients. For ``backend='float64'``,
+        the same shape as ``r``: ``(alpha_1, ..., alpha_N)`` or
+        ``(n_samples, N)``. For ``backend='mpmath'``, a ``list`` of
+        ``mpmath.mpf``, length ``N`` (or less, under
+        ``at_boundary='warn'``).
 
     Raises
     ------
@@ -424,6 +481,28 @@ def pacf(
         reaches a singular Toeplitz matrix (in any row, for a 2-D
         batch).
     """
+    if backend not in ("float64", "mpmath"):
+        raise ValueError(
+            f"backend must be 'float64' or 'mpmath'; got {backend!r}."
+        )
+
+    if backend == "mpmath":
+        if at_boundary not in ("raise", "warn"):
+            raise ValueError(
+                "at_boundary='extend' is not supported for "
+                "backend='mpmath'; use backend='float64'."
+            )
+
+        from . import _levinson_mp
+
+        r_list = _as_sequence_1d(r, name="r")
+        return _levinson_mp._pacf_mp(
+            r_list, dps=dps, at_boundary=at_boundary
+        )
+
+    if dps is not None:
+        raise ValueError("dps is only used when backend='mpmath'.")
+
     if at_boundary not in ("raise", "warn", "extend"):
         raise ValueError(
             "at_boundary must be one of 'raise', 'warn', 'extend'; "
@@ -487,7 +566,12 @@ def _pacf_1d(r_array: FloatArray, at_boundary: BoundaryMode) -> FloatArray:
     )
 
 
-def from_pacf(alpha: ArrayLike) -> FloatArray:
+def from_pacf(
+    alpha: ArrayLike,
+    *,
+    backend: Backend = "float64",
+    dps: int | None = None,
+) -> FloatArray | list:
     """
     Reconstruct correlations from partial autocorrelations.
 
@@ -499,14 +583,56 @@ def from_pacf(alpha: ArrayLike) -> FloatArray:
         such sequences with shape ``(n_samples, N)``. For a 2-D
         batch, the recursion is applied independently, row by row
         (the same recursion as for the 1-D case, not a different
-        algorithm).
+        algorithm). ``backend='mpmath'`` only supports 1-D input.
+        Accepted as plain Python floats (or anything ``mpmath.mpf``
+        accepts, for ``backend='mpmath'``); values are promoted to
+        the working precision internally, the caller does not need
+        to pre-construct ``mp.mpf`` values.
+    backend
+        ``'float64'`` (default) runs the plain ``numpy`` recursion in
+        this module. ``'mpmath'`` runs the arbitrary-precision
+        recursion in :mod:`schurcorr._levinson_mp` instead -- see
+        :func:`pacf` and that module's docstring. With
+        ``backend='mpmath'``, the return value is a ``list`` of
+        ``mpmath.mpf`` (not downcast to ``float64``).
+    dps
+        Working precision in decimal places, only used when
+        ``backend='mpmath'``. If ``None`` (default),
+        ``recommended_dps(len(alpha))`` is used.
 
     Returns
     -------
     r
-        Normalized correlation coefficients, with the same shape as
-        ``alpha``: ``(r_1, ..., r_N)`` or ``(n_samples, N)``.
+        Normalized correlation coefficients. For ``backend='float64'``,
+        the same shape as ``alpha``: ``(r_1, ..., r_N)`` or
+        ``(n_samples, N)``. For ``backend='mpmath'``, a ``list`` of
+        ``mpmath.mpf``, length ``N``.
+
+    Raises
+    ------
+    ValueError
+        If any ``abs(alpha_n) >= 1``, regardless of backend.
     """
+    if backend not in ("float64", "mpmath"):
+        raise ValueError(
+            f"backend must be 'float64' or 'mpmath'; got {backend!r}."
+        )
+
+    if backend == "mpmath":
+        alpha_array = _asarray1d(alpha, name="alpha")
+
+        if np.any(np.abs(alpha_array) >= 1.0):
+            raise ValueError(
+                "All PACF coefficients must satisfy abs(alpha_n) < 1."
+            )
+
+        from . import _levinson_mp
+
+        return _levinson_mp._from_pacf_mp(alpha_array.tolist(), dps=dps)
+
+    if dps is not None:
+        raise ValueError("dps is only used when backend='mpmath'.")
+
     alpha_array = _asarray_batchable(alpha, name="alpha")
 
     if alpha_array.ndim == 1:
