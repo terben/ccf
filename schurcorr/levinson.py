@@ -223,10 +223,14 @@ class _LevinsonState:
                 alpha_n = float(np.sign(alpha_n))
                 alpha_values.append(alpha_n)
 
-                phi_boundary = np.append(phi, alpha_n)
-                predictors.append(
-                    np.asarray(phi_boundary, dtype=np.float64)
-                )
+                if n == 1:
+                    phi_boundary = np.array([alpha_n], dtype=np.float64)
+                else:
+                    phi_boundary = np.empty(n, dtype=np.float64)
+                    phi_boundary[:-1] = phi - alpha_n * phi[::-1]
+                    phi_boundary[-1] = alpha_n
+
+                predictors.append(phi_boundary)
 
                 sigma2_values.append(0.0)
 
@@ -401,8 +405,11 @@ def pacf(
           coefficients past the boundary are the unique continuation
           forced by the Toeplitz structure (see
           :func:`schurcorr.sh_bounds.extend_at_boundary`). These
-          boundary coefficients are exactly ``+1`` or ``-1`` and are
-          *not* interior PACF values in ``(-1, 1)``.
+          boundary coefficients are exactly ``+1`` or ``-1`` (the
+          sign fixed at the first boundary hit) and are *not*
+          interior PACF values in ``(-1, 1)`` -- ``sigma_n^2`` stays
+          exactly zero from that order on, so the bijection with an
+          interior ``alpha_n`` no longer applies.
 
     Returns
     -------
@@ -423,32 +430,22 @@ def pacf(
             f"got {at_boundary!r}."
         )
 
-    if at_boundary == "extend":
-        raise NotImplementedError(
-            "at_boundary='extend' is not yet implemented; it will "
-            "delegate to schurcorr.sh_bounds.extend_at_boundary()."
-        )
-
     r_array = _asarray_batchable(r, name="r")
 
     if r_array.ndim == 1:
-        state = _LevinsonState.from_correlations(
-            r_array, at_boundary=at_boundary
-        )
-        return state.alpha
+        return _pacf_1d(r_array, at_boundary)
 
     n_samples, n_max = r_array.shape
     alpha_rows: list[FloatArray] = []
 
     for i in range(n_samples):
         try:
-            row_state = _LevinsonState.from_correlations(
-                r_array[i], at_boundary=at_boundary
-            )
+            row_alpha = _pacf_1d(r_array[i], at_boundary)
         except SingularToeplitzError as error:
             raise SingularToeplitzError(f"sample {i}: {error}") from error
+        except ValueError as error:
+            raise ValueError(f"sample {i}: {error}") from error
 
-        row_alpha = row_state.alpha
         if row_alpha.size < n_max:
             padded = np.full(n_max, np.nan, dtype=np.float64)
             padded[: row_alpha.size] = row_alpha
@@ -457,6 +454,37 @@ def pacf(
         alpha_rows.append(row_alpha)
 
     return np.stack(alpha_rows)
+
+
+def _pacf_1d(r_array: FloatArray, at_boundary: BoundaryMode) -> FloatArray:
+    """
+    Compute partial autocorrelations for a single 1-D correlation
+    sequence, implementing the ``at_boundary`` semantics of
+    :func:`pacf`.
+    """
+    if at_boundary != "extend":
+        state = _LevinsonState.from_correlations(
+            r_array, at_boundary=at_boundary
+        )
+        return state.alpha
+
+    state = _LevinsonState.from_correlations(r_array, at_boundary="warn")
+
+    if state.sigma2[-1] > _TOL:
+        return state.alpha
+
+    n_max = r_array.size
+    prefix_len = state.r.size
+    sign = state.alpha[-1]
+
+    if prefix_len < n_max:
+        from .sh_bounds import extend_at_boundary
+
+        extend_at_boundary(r_array, n_extra=n_max - prefix_len)
+
+    return np.concatenate(
+        [state.alpha, np.full(n_max - prefix_len, sign, dtype=np.float64)]
+    )
 
 
 def from_pacf(alpha: ArrayLike) -> FloatArray:

@@ -30,6 +30,7 @@ from .levinson import (
 from .sh_bounds import (
     admissible_bounds,
     check_admissibility,
+    extend_at_boundary,
     sh_coordinates,
 )
 
@@ -44,6 +45,7 @@ __all__ = [
     "admissible_bounds",
     "sh_coordinates",
     "check_admissibility",
+    "extend_at_boundary",
     "SingularToeplitzError",
 ]
 

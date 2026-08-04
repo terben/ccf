@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.linalg as sla
 import sympy as sp
 import pytest
 import schurcorr as sc
@@ -31,11 +32,29 @@ def test_pacf_warn_at_boundary_returns_truncated():
     np.testing.assert_allclose(alpha, [1.0])
 
 
-def test_pacf_extend_at_boundary_not_implemented():
+def test_pacf_extend_at_boundary_simple_order1():
+    # r_1 = 1 forces every subsequent correlation to also equal 1.
+    r = np.array([1.0, 1.0, 1.0])
+
+    alpha = sc.pacf(r, at_boundary="extend")
+
+    np.testing.assert_allclose(alpha, [1.0, 1.0, 1.0])
+
+
+def test_pacf_extend_at_boundary_rejects_inconsistent_tail():
     r = np.array([1.0, 0.5, 0.3])
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="inconsistent"):
         sc.pacf(r, at_boundary="extend")
+
+
+def test_pacf_extend_not_at_boundary_behaves_normally():
+    alpha = np.array([0.2, -0.3, 0.4])
+    r = sc.from_pacf(alpha)
+
+    np.testing.assert_allclose(
+        sc.pacf(r, at_boundary="extend"), alpha, rtol=1e-12, atol=1e-12
+    )
 
 
 def test_pacf_invalid_at_boundary_raises_value_error():
@@ -63,6 +82,122 @@ def test_fisher_roundtrip():
     alpha_back = sc.inverse_fisher(y)
 
     np.testing.assert_allclose(alpha_back, alpha, rtol=1e-12, atol=1e-12)
+
+
+# --- extend_at_boundary ----------------------------------------------------
+
+
+def _order3_boundary_sequence():
+    """
+    Construct r_1, r_2, r_3 with A_1, A_2, A_3 positive definite and
+    A_4 singular, i.e. the boundary is first reached at m = 4
+    (alpha_3 = +1).
+    """
+    alpha12 = np.array([0.3, -0.2])
+    r12 = sc.from_pacf(alpha12)
+
+    _, r_upper = sc.admissible_bounds(np.append(r12, r12[-1]))
+
+    r3 = r_upper[2]
+    return np.append(r12, r3)
+
+
+def test_extend_at_boundary_order1():
+    r_ext = sc.extend_at_boundary(np.array([1.0]), n_extra=3)
+    np.testing.assert_allclose(r_ext, [1.0, 1.0, 1.0, 1.0])
+
+
+def test_extend_at_boundary_null_vector_matches_scipy():
+    r = _order3_boundary_sequence()
+
+    with pytest.warns(RuntimeWarning):
+        r_ext = sc.extend_at_boundary(r, n_extra=3)
+
+    # A_4, built from r_1, r_2, r_3, must be singular, and the
+    # phi-derived null vector used internally must be proportional
+    # (up to sign) to the null space computed directly by scipy.
+    a4 = sla.toeplitz([1.0, r[0], r[1], r[2]])
+    eigenvalues = np.linalg.eigvalsh(a4)
+    assert np.min(np.abs(eigenvalues)) < 1e-8
+
+    null_space = sla.null_space(a4, rcond=1e-8)
+    assert null_space.shape == (4, 1)
+    w = null_space[:, 0]
+
+    with pytest.warns(RuntimeWarning):
+        alpha_ext = sc.pacf(r, at_boundary="extend")
+
+    phi = -w[1:] / w[0]
+    predicted_r4 = float(np.dot(phi, r[::-1]))
+    np.testing.assert_allclose(predicted_r4, r_ext[3], atol=1e-8)
+    assert alpha_ext[2] == 1.0
+
+
+def test_extend_at_boundary_recurrence_holds_for_generated_values():
+    r = _order3_boundary_sequence()
+
+    with pytest.warns(RuntimeWarning):
+        r_ext = sc.extend_at_boundary(r, n_extra=4)
+
+    # every extended matrix A_(4+s) must remain singular
+    for k in range(4, len(r_ext) + 1):
+        a_k = sla.toeplitz(np.concatenate(([1.0], r_ext[: k - 1])))
+        eigenvalues = np.linalg.eigvalsh(a_k)
+        assert np.min(np.abs(eigenvalues)) < 1e-6
+
+
+def test_extend_at_boundary_validates_consistent_prefix():
+    r = _order3_boundary_sequence()
+
+    with pytest.warns(RuntimeWarning):
+        r_ext = sc.extend_at_boundary(r, n_extra=2)
+
+    with pytest.warns(RuntimeWarning):
+        r_ext_again = sc.extend_at_boundary(r_ext, n_extra=2)
+
+    np.testing.assert_allclose(r_ext_again, r_ext)
+
+
+def test_extend_at_boundary_rejects_inconsistent_prefix():
+    r = _order3_boundary_sequence()
+    r_bad = np.append(r, 999.0)
+
+    with pytest.raises(ValueError, match="inconsistent"):
+        sc.extend_at_boundary(r_bad, n_extra=1)
+
+
+def test_extend_at_boundary_n_extra_too_small_for_existing_excess():
+    r = _order3_boundary_sequence()
+    r_with_excess = np.append(r, r[-1])
+
+    with pytest.raises(ValueError, match="n_extra"):
+        sc.extend_at_boundary(r_with_excess, n_extra=0)
+
+
+def test_extend_at_boundary_negative_n_extra_raises():
+    with pytest.raises(ValueError):
+        sc.extend_at_boundary(np.array([1.0]), n_extra=-1)
+
+
+def test_extend_at_boundary_requires_boundary_reached():
+    alpha = np.array([0.2, -0.3, 0.4])
+    r = sc.from_pacf(alpha)
+
+    with pytest.raises(ValueError, match="boundary"):
+        sc.extend_at_boundary(r, n_extra=2)
+
+
+def test_pacf_extend_batched():
+    r_no_boundary = sc.from_pacf(np.array([0.2, -0.3, 0.4]))
+    r_boundary = np.array([1.0, 1.0, 1.0])
+
+    with pytest.warns(RuntimeWarning):
+        alpha_batch = sc.pacf(
+            np.stack([r_no_boundary, r_boundary]), at_boundary="extend"
+        )
+
+    np.testing.assert_allclose(alpha_batch[0], [0.2, -0.3, 0.4])
+    np.testing.assert_allclose(alpha_batch[1], [1.0, 1.0, 1.0])
 
 
 # --- Batched (2-D) interface ---------------------------------------------
