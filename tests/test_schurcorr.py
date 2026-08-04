@@ -309,6 +309,77 @@ def test_pacf_mpmath_custom_dps():
     )
 
 
+# --- admissible_volume / log_admissible_volume ------------------------------
+
+
+def _volume_symbolic(N):
+    j = sp.symbols("j", positive=True, integer=True)
+    prod = sp.Integer(1)
+    for jj in range(1, N):
+        prod *= sp.sqrt(sp.pi) * sp.factorial(jj) / sp.gamma(jj + sp.Rational(3, 2))
+    return sp.nsimplify(2 * prod)
+
+
+@pytest.mark.parametrize("N", [1, 2, 3, 4, 5, 6])
+def test_admissible_volume_matches_closed_form(N):
+    expected = float(_volume_symbolic(N))
+    np.testing.assert_allclose(sc.admissible_volume(N), expected, rtol=1e-12)
+
+
+def test_admissible_volume_order1_is_hypercube_width():
+    # N = 1: r_1 = alpha_1 in (-1, 1) directly, volume = 2.
+    assert sc.admissible_volume(1) == 2.0
+
+
+@pytest.mark.parametrize("N", [1, 2, 5, 10, 50])
+def test_log_admissible_volume_matches_admissible_volume(N):
+    np.testing.assert_allclose(
+        sc.log_admissible_volume(N),
+        np.log(sc.admissible_volume(N)),
+        rtol=1e-10,
+    )
+
+
+def test_admissible_volume_underflows_where_log_does_not():
+    assert sc.admissible_volume(2000) == 0.0
+    assert np.isfinite(sc.log_admissible_volume(2000))
+    assert sc.log_admissible_volume(2000) < 0.0
+
+
+@pytest.mark.parametrize("N", [0, -1, 2.5])
+def test_admissible_volume_rejects_invalid_N(N):
+    with pytest.raises(ValueError):
+        sc.admissible_volume(N)
+
+    with pytest.raises(ValueError):
+        sc.log_admissible_volume(N)
+
+
+@pytest.mark.parametrize("N", [2, 3, 4])
+def test_sh_normalized_volume_matches_monte_carlo_admissible_fraction(N):
+    # Independent cross-check of V_N^SH = V_N / 2^N (Eq. volume_SH):
+    # it is the probability that a correlation sequence drawn
+    # uniformly from [-1, 1]^N is admissible.
+    rng = np.random.default_rng(20260714)
+    trials = 20_000
+    samples = rng.uniform(-1.0, 1.0, size=(trials, N))
+
+    admissible_count = sum(
+        1 for row in samples if sc.check_admissibility(row)
+    )
+    empirical_fraction = admissible_count / trials
+
+    v_sh = sc.admissible_volume(N) / 2.0**N
+
+    assert abs(empirical_fraction - v_sh) < 0.02
+
+
+def test_sh_normalized_volume_is_a_probability():
+    for N in [1, 2, 5, 10, 30]:
+        v_sh = sc.admissible_volume(N) / 2.0**N
+        assert 0.0 < v_sh <= 1.0
+
+
 # --- Batched (2-D) interface ---------------------------------------------
 
 

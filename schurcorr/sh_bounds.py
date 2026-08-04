@@ -23,8 +23,11 @@ partial autocorrelation coefficient,
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.special import gammaln
 
 from .levinson import (
     _TOL,
@@ -320,3 +323,87 @@ def check_admissibility(
         )
 
     return admissible
+
+
+def log_admissible_volume(N: int) -> float:
+    """
+    Natural logarithm of the volume of the admissible region.
+
+    Parameters
+    ----------
+    N
+        Order of the Toeplitz correlation sequence (number of lags).
+        Must be a positive integer.
+
+    Returns
+    -------
+    float
+        ``log(V_N)``, the natural logarithm of the Lebesgue volume of
+        the admissible region in ``r``-space (Eq. (volume), Sect. 6.1
+        of the paper).
+
+    Raises
+    ------
+    ValueError
+        If ``N`` is not a positive integer.
+
+    Notes
+    -----
+    Computed in log-space via ``scipy.special.gammaln``, since the
+    underlying product
+
+    ``V_N = 2 * prod_(j=1)^(N-1) sqrt(pi) * j! / Gamma(j + 3/2)``
+
+    underflows ``float64`` for large ``N`` (see :func:`admissible_volume`).
+
+    References
+    ----------
+    Erben (in preparation), Eq. (volume), Sect. 6.1; the SH-normalized
+    volume ``V_N^SH = V_N / 2^N`` (Eq. (volume_SH)) is cross-checked
+    in the test suite.
+    """
+    if N < 1 or N != int(N):
+        raise ValueError(f"N must be a positive integer; got {N!r}.")
+
+    if N == 1:
+        return math.log(2.0)
+
+    j = np.arange(1, N, dtype=np.float64)
+    log_terms = 0.5 * math.log(math.pi) + gammaln(j + 1.0) - gammaln(j + 1.5)
+
+    return math.log(2.0) + float(np.sum(log_terms))
+
+
+def admissible_volume(N: int) -> float:
+    """
+    Lebesgue volume of the admissible region in ``r``-space.
+
+    Parameters
+    ----------
+    N
+        Order of the Toeplitz correlation sequence (number of lags).
+        Must be a positive integer.
+
+    Returns
+    -------
+    float
+        ``V_N`` (Eq. (volume), Sect. 6.1 of the paper),
+
+        ``V_N = 2 * prod_(j=1)^(N-1) sqrt(pi) * j! / Gamma(j + 3/2)``.
+
+    Raises
+    ------
+    ValueError
+        If ``N`` is not a positive integer.
+
+    Notes
+    -----
+    ``V_N`` shrinks rapidly with ``N`` (the admissible region is a
+    vanishing fraction of the enclosing hypercube ``(-1, 1)^N``) and
+    underflows to exactly ``0.0`` in ``float64`` for large ``N``; use
+    :func:`log_admissible_volume` instead in that regime, following
+    the numerical-robustness convention used elsewhere in the package
+    for products of many factors (see :func:`schurcorr.levinson.jacobian`
+    / :func:`schurcorr.levinson.log_jacobian`).
+    """
+    return float(np.exp(log_admissible_volume(N)))
