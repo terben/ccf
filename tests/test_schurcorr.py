@@ -540,6 +540,42 @@ def test_check_admissibility_false():
     assert not sc.check_admissibility(r)
 
 
+def test_admissible_bounds_boundary_consistent_tail_collapses_to_point():
+    with pytest.warns(RuntimeWarning):
+        r_lower, r_upper = sc.admissible_bounds(np.array([1.0, 1.0]))
+
+    np.testing.assert_allclose(r_lower, [-1.0, 1.0])
+    np.testing.assert_allclose(r_upper, [1.0, 1.0])
+
+
+def test_admissible_bounds_boundary_inconsistent_tail_raises():
+    with pytest.raises(ValueError, match="inconsistent"):
+        sc.admissible_bounds(np.array([1.0, 0.5]))
+
+
+def test_check_admissibility_true_at_boundary_order1():
+    # r_1 = 1 forces r_2 = 1 too; this is a legitimate degenerate
+    # (positive semidefinite but singular) correlation sequence, not
+    # an inadmissible one.
+    with pytest.warns(RuntimeWarning):
+        assert sc.check_admissibility(np.array([1.0, 1.0]))
+
+
+def test_check_admissibility_false_at_boundary_inconsistent_tail():
+    with pytest.warns(RuntimeWarning):
+        assert not sc.check_admissibility(np.array([1.0, 0.5]))
+
+
+def test_check_admissibility_true_at_boundary_higher_order():
+    r = _order3_boundary_sequence()
+
+    with pytest.warns(RuntimeWarning):
+        r_ext = sc.extend_at_boundary(r, n_extra=3)
+
+    with pytest.warns(RuntimeWarning):
+        assert sc.check_admissibility(r_ext)
+
+
 def test_invalid_alpha_from_pacf():
     alpha = np.array([0.2, 1.0])
 

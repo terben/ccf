@@ -40,6 +40,28 @@ from .levinson import (
 _CONSISTENCY_TOL = 1.0e-8
 
 
+def _forced_continuation(phi: FloatArray, window: list[float]) -> float:
+    """
+    Evaluate the Toeplitz-forced linear recurrence one step ahead.
+
+    Parameters
+    ----------
+    phi
+        Terminal Levinson--Durbin predictor coefficients at the
+        singular boundary (see :func:`extend_at_boundary`).
+    window
+        The ``len(phi)`` most recent correlation coefficients, oldest
+        first.
+
+    Returns
+    -------
+    float
+        The uniquely forced next coefficient.
+    """
+    reversed_window = np.asarray(window[::-1], dtype=np.float64)
+    return float(np.dot(phi, reversed_window))
+
+
 def admissible_bounds(
     r: ArrayLike,
 ) -> tuple[FloatArray, FloatArray]:
@@ -79,6 +101,15 @@ def admissible_bounds(
 
     where ``p_n`` is the linear prediction from the preceding
     correlation coefficients.
+
+    If ``r`` reaches the singular boundary of the admissible region
+    (``sigma_(m-1)^2 = 0`` for some order ``m <= N``) within its given
+    length, every further coefficient is uniquely forced (see
+    :func:`extend_at_boundary`) and has no freedom left, so its bounds
+    collapse to a single point, ``r_(n, lower) = r_(n, upper) = r_n``.
+    Entries past the boundary are validated against that forced
+    continuation, not just checked for presence; a ``ValueError`` is
+    raised if they are inconsistent with it.
     """
     r_array = _asarray1d(r, name="r")
     state = _LevinsonState.from_correlations(r_array, at_boundary="warn")
@@ -112,7 +143,36 @@ def admissible_bounds(
         r_lower[n - 1] = prediction - half_width
         r_upper[n - 1] = prediction + half_width
 
-    return r_lower, r_upper
+    if number_computed == r_array.size:
+        return r_lower, r_upper
+
+    phi = state.predictor_coefficients[-1]
+    window = list(state.r)
+    excess = r_array[number_computed:]
+    extra_bounds = np.empty(excess.size, dtype=np.float64)
+
+    for i, supplied_raw in enumerate(excess):
+        forced = _forced_continuation(phi, window)
+        supplied = float(supplied_raw)
+
+        if not np.isclose(
+            forced, supplied, rtol=_CONSISTENCY_TOL, atol=_CONSISTENCY_TOL
+        ):
+            raise ValueError(
+                f"r_{number_computed + i + 1} = {supplied!r} is "
+                "inconsistent with the Toeplitz-forced continuation "
+                f"r_{number_computed + i + 1} = {forced!r} past the "
+                f"singular boundary (order {number_computed + 1}); r "
+                "does not define an admissible correlation sequence."
+            )
+
+        extra_bounds[i] = supplied
+        window = window[1:] + [supplied]
+
+    return (
+        np.concatenate([r_lower, extra_bounds]),
+        np.concatenate([r_upper, extra_bounds]),
+    )
 
 
 def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
@@ -206,8 +266,7 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     generated: list[float] = []
 
     for s in range(n_extra):
-        reversed_window = np.asarray(window[::-1], dtype=np.float64)
-        r_next = float(np.dot(phi, reversed_window))
+        r_next = _forced_continuation(phi, window)
 
         if s < existing_excess.size:
             supplied = float(existing_excess[s])
@@ -292,6 +351,15 @@ def check_admissibility(
     ValueError
         If ``raise_error=True`` and the supplied sequence is not
         admissible.
+
+    Notes
+    -----
+    A sequence that reaches the singular boundary of the admissible
+    region (see :func:`extend_at_boundary`) is admissible -- just
+    degenerate -- provided every coefficient past the boundary equals
+    the uniquely forced continuation; ``admissible_bounds`` validates
+    this rather than treating a boundary sequence as automatically
+    inadmissible.
     """
     if atol < 0.0:
         raise ValueError("atol must be non-negative.")
@@ -300,18 +368,10 @@ def check_admissibility(
         r_array = _asarray1d(r, name="r")
         r_lower, r_upper = admissible_bounds(r_array)
 
-        complete_sequence = (
-            r_lower.size == r_array.size
-            and r_upper.size == r_array.size
+        admissible = bool(
+            np.all(r_array >= r_lower - atol)
+            and np.all(r_array <= r_upper + atol)
         )
-
-        if complete_sequence:
-            admissible = bool(
-                np.all(r_array >= r_lower - atol)
-                and np.all(r_array <= r_upper + atol)
-            )
-        else:
-            admissible = False
 
     except (TypeError, ValueError):
         admissible = False
