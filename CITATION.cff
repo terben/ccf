@@ -10,5 +10,7 @@ version: 0.1.0
 
 license: BSD-3-Clause
 
+doi: 10.5281/zenodo.PLACEHOLDER
+
 message: >
   If you use this software, please cite the accompanying paper.

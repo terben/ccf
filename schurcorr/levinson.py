@@ -16,12 +16,9 @@ The notation follows the accompanying paper.
 from __future__ import annotations
 
 import warnings
-from typing import overload
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-
-from .types import LevinsonInfo
 
 
 FloatArray = NDArray[np.float64]
@@ -284,29 +281,7 @@ class _LevinsonState:
         )
 
 
-@overload
-def pacf(
-    r: ArrayLike,
-    *,
-    return_info: bool = False,
-) -> FloatArray:
-    ...
-
-
-@overload
-def pacf(
-    r: ArrayLike,
-    *,
-    return_info: bool,
-) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
-    ...
-
-
-def pacf(
-    r: ArrayLike,
-    *,
-    return_info: bool = False,
-) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
+def pacf(r: ArrayLike) -> FloatArray:
     """
     Compute partial autocorrelations from correlation coefficients.
 
@@ -315,53 +290,18 @@ def pacf(
     r
         Normalized correlation coefficients
         ``(r_1, ..., r_N)``.
-    return_info
-        If ``True``, also return innovation variances and predictor
-        coefficients.
 
     Returns
     -------
     alpha
         Partial autocorrelation coefficients
         ``(alpha_1, ..., alpha_N)``.
-    info
-        Additional recursion information. Returned only when
-        ``return_info=True``.
     """
     state = _LevinsonState.from_correlations(r)
-
-    if return_info:
-        return state.alpha, LevinsonInfo(
-            sigma2=state.sigma2,
-            predictor_coefficients=state.predictor_coefficients,
-        )
-
     return state.alpha
 
 
-@overload
-def from_pacf(
-    alpha: ArrayLike,
-    *,
-    return_info: bool = False,
-) -> FloatArray:
-    ...
-
-
-@overload
-def from_pacf(
-    alpha: ArrayLike,
-    *,
-    return_info: bool,
-) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
-    ...
-
-
-def from_pacf(
-    alpha: ArrayLike,
-    *,
-    return_info: bool = False,
-) -> FloatArray | tuple[FloatArray, LevinsonInfo]:
+def from_pacf(alpha: ArrayLike) -> FloatArray:
     """
     Reconstruct correlations from partial autocorrelations.
 
@@ -370,27 +310,14 @@ def from_pacf(
     alpha
         Partial autocorrelation coefficients
         ``(alpha_1, ..., alpha_N)``.
-    return_info
-        If ``True``, also return innovation variances and predictor
-        coefficients.
 
     Returns
     -------
     r
         Normalized correlation coefficients
         ``(r_1, ..., r_N)``.
-    info
-        Additional recursion information. Returned only when
-        ``return_info=True``.
     """
     state = _LevinsonState.from_pacf(alpha)
-
-    if return_info:
-        return state.r, LevinsonInfo(
-            sigma2=state.sigma2,
-            predictor_coefficients=state.predictor_coefficients,
-        )
-
     return state.r
 
 

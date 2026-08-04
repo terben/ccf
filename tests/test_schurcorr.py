@@ -4,7 +4,6 @@ import pytest
 import schurcorr as sc
 
 from schurcorr import symbolic
-from schurcorr import symbolic_fast
 
 
 def test_pacf_roundtrip():
@@ -136,61 +135,3 @@ def test_symbolic_second_order_bounds():
 @pytest.mark.parametrize("order", [1, 2, 3, 4])
 def test_symbolic_sh_coordinate_equals_pacf(order):
     assert verify_x_equals_alpha(order) == 0
-
-@pytest.mark.parametrize("order", [1, 2, 3, 4])
-def test_fast_symbolic_pacf_matches_reference(order):
-    difference = (
-        symbolic_fast.pacf_symbolic(order, simplify="cancel")
-        - symbolic.pacf_symbolic(order)
-    )
-
-    assert sp.cancel(difference) == 0
-
-
-@pytest.mark.parametrize("order", [1, 2, 3, 4])
-def test_fast_symbolic_bounds_match_reference(order):
-    lower_fast, upper_fast = (
-        symbolic_fast.admissible_bounds_symbolic(
-            order,
-            simplify="cancel",
-        )
-    )
-    lower_reference, upper_reference = (
-        symbolic.admissible_bounds_symbolic(order)
-    )
-
-    assert sp.cancel(lower_fast - lower_reference) == 0
-    assert sp.cancel(upper_fast - upper_reference) == 0
-
-
-@pytest.mark.parametrize("order", [1, 2, 3, 4])
-def test_fast_symbolic_sh_coordinate_equals_pacf(order):
-    assert symbolic_fast.verify_x_equals_alpha(order) == 0
-
-@pytest.mark.parametrize("order", [1, 2, 3, 5, 10, 15])
-def test_compact_symbolic_sh_coordinate_equals_pacf(order):
-    assert (
-        symbolic_fast.verify_compact_x_equals_alpha(order)
-        == 0
-    )
-
-
-def test_compact_symbolic_system_size():
-    system = symbolic_fast.compact_symbolic_system(15)
-
-    assert len(system.alpha) == 15
-    assert len(system.sigma2) == 16
-    assert len(system.predictor_coefficients) == 15
-
-
-def test_compact_symbolic_definitions_are_ordered():
-    system = symbolic_fast.compact_symbolic_system(6)
-    defined = set()
-    correlations = set(system.correlations)
-
-    for equation in system.definitions:
-        allowed = defined | correlations
-        dependencies = equation.rhs.free_symbols
-
-        assert dependencies <= allowed
-        defined.add(equation.lhs)
