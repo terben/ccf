@@ -72,6 +72,39 @@ def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
     return np.ascontiguousarray(array)
 
 
+def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
+    """
+    Convert array-like input to a contiguous float array of ndim 1 or 2.
+
+    Parameters
+    ----------
+    x
+        Input values, either a 1-D sequence ``(N,)`` or a 2-D batch
+        ``(n_samples, N)``.
+    name
+        Argument name used in error messages.
+
+    Returns
+    -------
+    numpy.ndarray
+        Contiguous array, unchanged in ndim (1 or 2).
+
+    Raises
+    ------
+    ValueError
+        If the input is neither one- nor two-dimensional.
+    """
+    array = np.asarray(x, dtype=np.float64)
+
+    if array.ndim not in (1, 2):
+        raise ValueError(
+            f"{name} must be a 1-D array (N,) or a 2-D batch "
+            f"(n_samples, N); got ndim={array.ndim}."
+        )
+
+    return np.ascontiguousarray(array)
+
+
 class _LevinsonState:
     """
     Internal representation of a Levinson--Durbin recursion.
@@ -344,20 +377,26 @@ def pacf(
     Parameters
     ----------
     r
-        Normalized correlation coefficients
-        ``(r_1, ..., r_N)``.
+        Normalized correlation coefficients, either a 1-D array
+        ``(r_1, ..., r_N)`` or a 2-D batch of ``n_samples`` such
+        sequences with shape ``(n_samples, N)``. For a 2-D batch, the
+        recursion is applied independently, row by row (the same
+        recursion as for the 1-D case, not a different algorithm).
     at_boundary
         Behaviour when the recursion reaches a singular Toeplitz
         matrix, i.e. ``sigma_n^2 = 0`` for some ``n <= N`` (see
-        :class:`SingularToeplitzError`).
+        :class:`SingularToeplitzError`). Applied per row for a 2-D
+        batch.
 
         - ``'raise'`` (default): raise :class:`SingularToeplitzError`.
           The PACF/bijection view and the ``r``-sequence view disagree
           at this boundary, so the default forces the caller to
           decide explicitly how to proceed.
         - ``'warn'``: clamp, emit a ``RuntimeWarning``, and return the
-          non-degenerate part of ``alpha`` only (its length is then
-          less than ``N``).
+          non-degenerate part of ``alpha`` only. For a 1-D input, its
+          length is then less than ``N``; for a 2-D batch, an affected
+          row is padded with ``NaN`` past its truncation point so the
+          returned array remains rectangular.
         - ``'extend'``: return a full-length ``alpha`` in which the
           coefficients past the boundary are the unique continuation
           forced by the Toeplitz structure (see
@@ -368,14 +407,15 @@ def pacf(
     Returns
     -------
     alpha
-        Partial autocorrelation coefficients
-        ``(alpha_1, ..., alpha_N)``.
+        Partial autocorrelation coefficients, with the same shape as
+        ``r``: ``(alpha_1, ..., alpha_N)`` or ``(n_samples, N)``.
 
     Raises
     ------
     SingularToeplitzError
         If ``at_boundary='raise'`` (the default) and the recursion
-        reaches a singular Toeplitz matrix.
+        reaches a singular Toeplitz matrix (in any row, for a 2-D
+        batch).
     """
     if at_boundary not in ("raise", "warn", "extend"):
         raise ValueError(
@@ -389,8 +429,34 @@ def pacf(
             "delegate to schurcorr.sh_bounds.extend_at_boundary()."
         )
 
-    state = _LevinsonState.from_correlations(r, at_boundary=at_boundary)
-    return state.alpha
+    r_array = _asarray_batchable(r, name="r")
+
+    if r_array.ndim == 1:
+        state = _LevinsonState.from_correlations(
+            r_array, at_boundary=at_boundary
+        )
+        return state.alpha
+
+    n_samples, n_max = r_array.shape
+    alpha_rows: list[FloatArray] = []
+
+    for i in range(n_samples):
+        try:
+            row_state = _LevinsonState.from_correlations(
+                r_array[i], at_boundary=at_boundary
+            )
+        except SingularToeplitzError as error:
+            raise SingularToeplitzError(f"sample {i}: {error}") from error
+
+        row_alpha = row_state.alpha
+        if row_alpha.size < n_max:
+            padded = np.full(n_max, np.nan, dtype=np.float64)
+            padded[: row_alpha.size] = row_alpha
+            row_alpha = padded
+
+        alpha_rows.append(row_alpha)
+
+    return np.stack(alpha_rows)
 
 
 def from_pacf(alpha: ArrayLike) -> FloatArray:
@@ -400,17 +466,37 @@ def from_pacf(alpha: ArrayLike) -> FloatArray:
     Parameters
     ----------
     alpha
-        Partial autocorrelation coefficients
-        ``(alpha_1, ..., alpha_N)``.
+        Partial autocorrelation coefficients, either a 1-D array
+        ``(alpha_1, ..., alpha_N)`` or a 2-D batch of ``n_samples``
+        such sequences with shape ``(n_samples, N)``. For a 2-D
+        batch, the recursion is applied independently, row by row
+        (the same recursion as for the 1-D case, not a different
+        algorithm).
 
     Returns
     -------
     r
-        Normalized correlation coefficients
-        ``(r_1, ..., r_N)``.
+        Normalized correlation coefficients, with the same shape as
+        ``alpha``: ``(r_1, ..., r_N)`` or ``(n_samples, N)``.
     """
-    state = _LevinsonState.from_pacf(alpha)
-    return state.r
+    alpha_array = _asarray_batchable(alpha, name="alpha")
+
+    if alpha_array.ndim == 1:
+        state = _LevinsonState.from_pacf(alpha_array)
+        return state.r
+
+    n_samples = alpha_array.shape[0]
+    r_rows: list[FloatArray] = []
+
+    for i in range(n_samples):
+        try:
+            row_state = _LevinsonState.from_pacf(alpha_array[i])
+        except ValueError as error:
+            raise ValueError(f"sample {i}: {error}") from error
+
+        r_rows.append(row_state.r)
+
+    return np.stack(r_rows)
 
 
 def fisher(alpha: ArrayLike) -> FloatArray:
@@ -424,14 +510,17 @@ def fisher(alpha: ArrayLike) -> FloatArray:
     Parameters
     ----------
     alpha
-        Partial autocorrelation coefficients.
+        Partial autocorrelation coefficients, either a 1-D array
+        ``(N,)`` or a 2-D batch ``(n_samples, N)``. The map is
+        applied elementwise, so the batch case is not a distinct
+        code path.
 
     Returns
     -------
     numpy.ndarray
-        Fisher coordinates.
+        Fisher coordinates, with the same shape as ``alpha``.
     """
-    alpha_array = _asarray1d(alpha, name="alpha")
+    alpha_array = _asarray_batchable(alpha, name="alpha")
 
     if np.any(np.abs(alpha_array) >= 1.0):
         raise ValueError(
@@ -452,14 +541,17 @@ def inverse_fisher(y: ArrayLike) -> FloatArray:
     Parameters
     ----------
     y
-        Fisher coordinates.
+        Fisher coordinates, either a 1-D array ``(N,)`` or a 2-D
+        batch ``(n_samples, N)``. The map is applied elementwise, so
+        the batch case is not a distinct code path.
 
     Returns
     -------
     numpy.ndarray
-        Partial autocorrelation coefficients.
+        Partial autocorrelation coefficients, with the same shape as
+        ``y``.
     """
-    y_array = _asarray1d(y, name="y")
+    y_array = _asarray_batchable(y, name="y")
     return np.tanh(y_array)
 
 
@@ -476,41 +568,65 @@ def innovation_variances(alpha: ArrayLike) -> FloatArray:
     Parameters
     ----------
     alpha
-        Partial autocorrelation coefficients.
+        Partial autocorrelation coefficients, either a 1-D array
+        ``(N,)`` or a 2-D batch ``(n_samples, N)``. For a 2-D batch,
+        the recursion runs independently, row by row, over the same
+        per-order loop as the 1-D case, vectorized across samples.
 
     Returns
     -------
     numpy.ndarray
-        Innovation variances
-        ``(sigma_0^2, ..., sigma_N^2)``.
+        Innovation variances ``(sigma_0^2, ..., sigma_N^2)``, or, for
+        a 2-D batch, ``(n_samples, N + 1)``.
     """
-    alpha_array = _asarray1d(alpha, name="alpha")
+    alpha_array = _asarray_batchable(alpha, name="alpha")
 
     if np.any(np.abs(alpha_array) > 1.0):
         raise ValueError(
             "All PACF coefficients must satisfy abs(alpha_n) <= 1."
         )
 
-    sigma2 = np.empty(
-        alpha_array.size + 1,
-        dtype=np.float64,
-    )
-    sigma2[0] = 1.0
-
-    for n, alpha_n in enumerate(alpha_array, start=1):
-        sigma2[n] = (
-            sigma2[n - 1]
-            * (1.0 - alpha_n * alpha_n)
+    if alpha_array.ndim == 1:
+        sigma2 = np.empty(
+            alpha_array.size + 1,
+            dtype=np.float64,
         )
+        sigma2[0] = 1.0
 
-        if sigma2[n] < 0.0 and sigma2[n] > -_TOL:
+        for n, alpha_n in enumerate(alpha_array, start=1):
+            sigma2[n] = (
+                sigma2[n - 1]
+                * (1.0 - alpha_n * alpha_n)
+            )
+
+            if sigma2[n] < 0.0 and sigma2[n] > -_TOL:
+                warnings.warn(
+                    "Innovation variance became slightly negative due "
+                    "to roundoff and was clamped to zero.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                sigma2[n] = 0.0
+
+        return sigma2
+
+    n_samples, n_max = alpha_array.shape
+    sigma2 = np.empty((n_samples, n_max + 1), dtype=np.float64)
+    sigma2[:, 0] = 1.0
+
+    for n in range(1, n_max + 1):
+        alpha_n = alpha_array[:, n - 1]
+        sigma2[:, n] = sigma2[:, n - 1] * (1.0 - alpha_n * alpha_n)
+
+        clamp_mask = (sigma2[:, n] < 0.0) & (sigma2[:, n] > -_TOL)
+        if np.any(clamp_mask):
             warnings.warn(
                 "Innovation variance became slightly negative due "
                 "to roundoff and was clamped to zero.",
                 RuntimeWarning,
                 stacklevel=2,
             )
-            sigma2[n] = 0.0
+            sigma2[clamp_mask, n] = 0.0
 
     return sigma2
 
