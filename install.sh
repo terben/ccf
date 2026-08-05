@@ -1,3 +1,3 @@
-conda env create -f environment.yml
+conda env create -f schurcorr.yml
 conda activate schurcorr
 python -m pytest
