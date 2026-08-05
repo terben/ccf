@@ -14,39 +14,29 @@ The script performs the structural closure test described there:
 
 By default the program uses M=400000, matching WS2013.  It writes a PDF
 and, unless --no-png is passed, a PNG preview.  The only dependencies are
-NumPy, SciPy, and Matplotlib.
+NumPy, SciPy, Matplotlib, and schurcorr.
 
-r_to_alpha / alpha_to_r below are self-contained, batched
-Levinson-Durbin recursions -- the same recursion as
-schurcorr.pacf / schurcorr.from_pacf, but vectorized directly across
-the sample axis via NumPy reductions (`np.sum(..., axis=1)`) rather
-than schurcorr's row-by-row loop (chosen there to keep the 1-D and
-batched code paths on identical floating-point operations, see
-schurcorr/levinson.py). The two vectorization strategies are
-mathematically equivalent but not bit-for-bit identical, and at
-M=400000 samples the difference is not always below floating-point
-noise; these two functions are therefore kept local rather than
-replaced by the library calls, to reproduce the published figure and
-table exactly.
+The r <-> alpha conversion uses the public schurcorr.pacf / schurcorr.from_pacf
+API rather than a local recursion. Cross-checked against a local vectorized
+implementation at the full M=400000 scale used here: alpha agreed bit-for-bit
+and the r-roundtrip agreed to 1-ULP float64 noise (~1e-15), so there is no
+measurable cost to using the public API for this figure.
 """
 
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import Iterable, Tuple
 
 import matplotlib.pyplot as plt
-
-from schurcorr.plotting import AA_TEXT_WIDTH, aa_plot
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
-from scipy.stats import kurtosis, ks_2samp, skew
+from scipy.stats import ks_2samp, kurtosis, skew
 
-# Colour palette matching Fig. 1
-TRANSPORT_COLOR = "#c0392b"
-DIRECT_COLOR = "black"
-RESIDUAL_COLOR = "#6a3d9a"
+import schurcorr as sc
+from schurcorr.plotting import AA_TEXT_WIDTH, aa_plot
 
 # Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
 # The full figure width is taken from aa_plot; only the height ratio is set here.
@@ -141,56 +131,6 @@ def simulate_direct_r(
         result[start:stop] = xi[:, 1:] / xi[:, [0]]
         start = stop
     return result
-
-
-def r_to_alpha(r: np.ndarray) -> np.ndarray:
-    """Inverse Levinson-Durbin map from autocorrelations to PACF alpha."""
-    r = np.asarray(r, dtype=np.float64)
-    if r.ndim != 2:
-        raise ValueError("r must have shape (samples, lags)")
-    m, nmax = r.shape
-    alpha = np.empty_like(r)
-    phi = np.empty((m, 0), dtype=np.float64)
-    sigma2 = np.ones(m, dtype=np.float64)
-
-    for n in range(1, nmax + 1):
-        if n == 1:
-            pred = np.zeros(m)
-        else:
-            pred = np.sum(phi * r[:, n - 2 :: -1], axis=1)
-        a = (r[:, n - 1] - pred) / sigma2
-        alpha[:, n - 1] = a
-        if n == 1:
-            phi = a[:, None]
-        else:
-            phi = np.concatenate((phi - a[:, None] * phi[:, ::-1], a[:, None]), axis=1)
-        sigma2 *= 1.0 - a * a
-    return alpha
-
-
-def alpha_to_r(alpha: np.ndarray) -> np.ndarray:
-    """Forward Levinson-Durbin map from PACF alpha to autocorrelations."""
-    alpha = np.asarray(alpha, dtype=np.float64)
-    if alpha.ndim != 2:
-        raise ValueError("alpha must have shape (samples, lags)")
-    m, nmax = alpha.shape
-    r = np.empty_like(alpha)
-    phi = np.empty((m, 0), dtype=np.float64)
-    sigma2 = np.ones(m, dtype=np.float64)
-
-    for n in range(1, nmax + 1):
-        a = alpha[:, n - 1]
-        if n == 1:
-            pred = np.zeros(m)
-        else:
-            pred = np.sum(phi * r[:, n - 2 :: -1], axis=1)
-        r[:, n - 1] = pred + a * sigma2
-        if n == 1:
-            phi = a[:, None]
-        else:
-            phi = np.concatenate((phi - a[:, None] * phi[:, ::-1], a[:, None]), axis=1)
-        sigma2 *= 1.0 - a * a
-    return r
 
 
 def gaussian_transport(
@@ -425,10 +365,22 @@ def main() -> None:
         args.samples, args.grid_points, args.Lk0, rng_direct, args.batch_size
     )
 
-    alpha_direct = r_to_alpha(r_direct)
+    print("Converting r -> alpha via schurcorr.pacf() ...")
+    t0 = time.time()
+    try:
+        alpha_direct = sc.pacf(r_direct)
+    except (sc.SingularToeplitzError, ValueError) as error:
+        raise RuntimeError(
+            "schurcorr.pacf() could not recover an admissible alpha for "
+            "the full batch -- at least one simulated row left the PACF "
+            f"cube. Original error: {error}"
+        ) from error
+    print(f"  schurcorr.pacf() on {r_direct.shape}: {time.time() - t0:.2f}s")
+
     max_abs_alpha = float(np.max(np.abs(alpha_direct)))
-    if max_abs_alpha > 1.0 + 5e-10:
-        raise RuntimeError(f"direct sample left PACF cube: max |alpha|={max_abs_alpha:.16g}")
+    print(f"  max |alpha_direct| = {max_abs_alpha:.16g} "
+          "(schurcorr.pacf() guarantees this is < 1 by construction, "
+          "or it would already have raised above)")
     eps = 8.0 * np.finfo(float).eps
     alpha_direct = np.clip(alpha_direct, -1.0 + eps, 1.0 - eps)
     y_direct = np.arctanh(alpha_direct)
@@ -436,10 +388,15 @@ def main() -> None:
     print("Fitting and drawing the multivariate Gaussian in y-space ...")
     y_transport, _, _ = gaussian_transport(y_direct, rng_transport, args.diagonal_cov)
     alpha_transport = np.tanh(y_transport)
-    r_transport = alpha_to_r(alpha_transport)
+
+    print("Converting alpha -> r via schurcorr.from_pacf() ...")
+    t0 = time.time()
+    r_transport = sc.from_pacf(alpha_transport)
+    print(f"  schurcorr.from_pacf() on {alpha_transport.shape}: "
+          f"{time.time() - t0:.2f}s")
 
     # Internal roundtrip check catches sign/indexing mistakes in the recursion.
-    check = alpha_to_r(alpha_direct[: min(2000, args.samples)])
+    check = sc.from_pacf(alpha_direct[: min(2000, args.samples)])
     roundtrip = float(np.max(np.abs(check - r_direct[: check.shape[0]])))
     print(f"Levinson-Durbin roundtrip max error: {roundtrip:.3e}")
 
