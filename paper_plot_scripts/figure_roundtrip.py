@@ -129,8 +129,8 @@ def mp_roundtrip_error(alpha: np.ndarray, dps: int) -> float:
     the mp domain (not after downcasting to float64 -- the whole point
     of the mpmath backend is to carry the comparison at working
     precision)."""
-    r_mp = sc.from_pacf(alpha, backend="mpmath", dps=dps)
-    rec_mp = sc.pacf(r_mp, backend="mpmath", dps=dps)
+    r_mp = sc.from_pacf_mp(alpha, dps=dps)
+    rec_mp = sc.pacf_mp(r_mp, dps=dps)
     err = max(abs(mp.mpf(a) - b) for a, b in zip(alpha, rec_mp))
     return float(err)
 
