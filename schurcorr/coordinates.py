@@ -1,10 +1,4 @@
-"""
-Coordinate transformations built on top of the PACF coordinates.
-
-Fisher coordinates, innovation variances, and the Jacobian determinant of
-``alpha -> r`` are simple, explicit functions of ``alpha`` -- unlike
-:mod:`schurcorr.levinson`, this module contains no recursion of its own.
-"""
+"""Coordinate transforms, innovation variances, and Jacobians."""
 
 from __future__ import annotations
 
@@ -13,7 +7,7 @@ import warnings
 import numpy as np
 from numpy.typing import ArrayLike
 
-from .levinson import _TOL, FloatArray, _asarray1d, _asarray_batchable
+from .levinson import _ROUNDING_TOL, FloatArray, _asarray1d, _asarray_batchable
 
 
 def fisher(alpha: ArrayLike) -> FloatArray:
@@ -116,7 +110,7 @@ def innovation_variances(alpha: ArrayLike) -> FloatArray:
                 * (1.0 - alpha_n * alpha_n)
             )
 
-            if sigma2[n] < 0.0 and sigma2[n] > -_TOL:
+            if sigma2[n] < 0.0 and sigma2[n] > -_ROUNDING_TOL:
                 warnings.warn(
                     "Innovation variance became slightly negative due "
                     "to roundoff and was clamped to zero.",
@@ -135,7 +129,7 @@ def innovation_variances(alpha: ArrayLike) -> FloatArray:
         alpha_n = alpha_array[:, n - 1]
         sigma2[:, n] = sigma2[:, n - 1] * (1.0 - alpha_n * alpha_n)
 
-        clamp_mask = (sigma2[:, n] < 0.0) & (sigma2[:, n] > -_TOL)
+        clamp_mask = (sigma2[:, n] < 0.0) & (sigma2[:, n] > -_ROUNDING_TOL)
         if np.any(clamp_mask):
             warnings.warn(
                 "Innovation variance became slightly negative due "

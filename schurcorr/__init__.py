@@ -1,20 +1,7 @@
-"""
-schurcorr
-=========
+"""Partial autocorrelations and natural coordinates for correlation functions.
 
-Companion package for the paper
-
-    Natural Coordinates for Constrained Correlation Functions:
-    Partial Autocorrelations and the Geometry of Positive Power Spectra
-
-The package provides routines for
-
-- Levinson--Durbin forward recursion from correlations to PACFs,
-- inverse recursion from PACFs to correlations,
-- Schneider--Hartlap admissible bounds and coordinates,
-- Fisher coordinates,
-- innovation variances,
-- Jacobian determinants.
+Companion package for "Natural Coordinates for Constrained Correlation
+Functions" (Erben, in preparation); see the README for usage.
 """
 
 from .bounds import (
@@ -39,7 +26,6 @@ from .levinson import (
     pacf,
     pacf_prefix,
 )
-from .precision import from_pacf_mp, pacf_mp, recommended_dps
 
 __all__ = [
     "PrefixResult",
@@ -50,17 +36,28 @@ __all__ = [
     "extend_at_boundary",
     "fisher",
     "from_pacf",
-    "from_pacf_mp",
     "innovation_variances",
     "inverse_fisher",
     "jacobian",
     "log_admissible_volume",
     "log_jacobian",
     "pacf",
-    "pacf_mp",
     "pacf_prefix",
-    "recommended_dps",
     "sh_coordinates",
 ]
 
-__version__ = "0.1.2"
+try:
+    # Requires the "precision" extra (mpmath); the numpy-only core stays
+    # importable without it.
+    from .precision import from_pacf_mp, pacf_mp, recommended_dps
+except ImportError:
+    pass
+else:
+    __all__ += ["from_pacf_mp", "pacf_mp", "recommended_dps"]
+
+try:
+    from importlib.metadata import PackageNotFoundError, version
+
+    __version__ = version("schurcorr")
+except PackageNotFoundError:
+    __version__ = "0+unknown"

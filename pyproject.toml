@@ -13,17 +13,27 @@ authors = [
     { name = "Thomas Erben" }
 ]
 dependencies = [
-    "numpy",
-    "scipy",
-    "matplotlib",
-    "sympy",
-    "mpmath"
+    "numpy"
 ]
 
 [project.optional-dependencies]
+plots = [
+    "matplotlib",
+    "scipy"
+]
+symbolic = [
+    "sympy"
+]
+precision = [
+    "mpmath"
+]
 test = [
     "pytest",
-    "statsmodels"
+    "statsmodels",
+    "schurcorr[plots,symbolic,precision]"
+]
+all = [
+    "schurcorr[plots,symbolic,precision]"
 ]
 
 [tool.setuptools.packages.find]
@@ -31,5 +41,6 @@ where = ["."]
 include = ["schurcorr*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "schurcorr"]
+addopts = "--doctest-modules"
 pythonpath = ["."]

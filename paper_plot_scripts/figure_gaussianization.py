@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Figure 3 (\\label{fig:qg_transport} in CCF.tex), Sect. 5.3.
-
-The script performs the structural closure test described there:
+"""Figure 3 (fig:qg_transport in CCF.tex), Sect. 5.3 -- the quasi-Gaussian
+structural closure test.
 
 1. Simulate M realizations of the normalized correlation coefficients r_n
    of a periodic one-dimensional Gaussian field with N=32 grid points and
@@ -12,15 +11,14 @@ The script performs the structural closure test described there:
    covariance), draw a transported sample, and map y -> alpha -> r.
 4. Compare the direct and transported r-marginals for selected lags.
 
-By default the program uses M=400000, matching WS2013.  It writes a PDF
-and, unless --no-png is passed, a PNG preview.  The only dependencies are
-NumPy, SciPy, Matplotlib, and schurcorr.
+Run:
+    python paper_plot_scripts/figure_gaussianization.py --quick
+    python paper_plot_scripts/figure_gaussianization.py
 
-The r <-> alpha conversion uses the public schurcorr.pacf / schurcorr.from_pacf
-API rather than a local recursion. Cross-checked against a local vectorized
-implementation at the full M=400000 scale used here: alpha agreed bit-for-bit
-and the r-roundtrip agreed to 1-ULP float64 noise (~1e-15), so there is no
-measurable cost to using the public API for this figure.
+--quick uses a small M for a fast functional check; the default M=400000
+matches WS2013 and is significantly slower.
+
+Writes a PDF and, unless --no-png is passed, a PNG preview.
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ks_2samp, kurtosis, skew
 
 import schurcorr as sc
-from schurcorr.plotting import AA_TEXT_WIDTH, aa_plot
+from style import AA_TEXT_WIDTH, aa_plot
 
 # Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
 # The full figure width is taken from aa_plot; only the height ratio is set here.
@@ -64,10 +62,19 @@ REFERENCE_LINEWIDTH = 0.8
 FIGDIR = Path(__file__).resolve().parent / "../figs"
 
 
+QUICK_SAMPLES = 2_000
+QUICK_BATCH_SIZE = 500
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--samples", "-M", type=int, default=400_000,
-                   help="number of realizations (default: 400000)")
+    p.add_argument("--quick", action="store_true",
+                   help="small M for a fast functional check "
+                        f"(samples={QUICK_SAMPLES}, batch-size={QUICK_BATCH_SIZE}), "
+                        "unless --samples/--batch-size override it")
+    p.add_argument("--samples", "-M", type=int, default=None,
+                   help="number of realizations (default: 400000, or "
+                        f"{QUICK_SAMPLES} with --quick)")
     p.add_argument("--grid-points", "-N", type=int, default=32,
                    help="number of periodic real-space grid points (default: 32)")
     p.add_argument("--Lk0", type=float, default=80.0,
@@ -77,8 +84,9 @@ def parse_args() -> argparse.Namespace:
                    help="three displayed lags (default: 1 2 3)")
     p.add_argument("--seed", type=int, default=20250304,
                    help="random seed (default: 20250304)")
-    p.add_argument("--batch-size", type=int, default=50_000,
-                   help="simulation batch size (default: 50000)")
+    p.add_argument("--batch-size", type=int, default=None,
+                   help="simulation batch size (default: 50000, or "
+                        f"{QUICK_BATCH_SIZE} with --quick)")
     p.add_argument("--bins", type=int, default=180,
                    help="number of common density bins per panel (default: 180)")
     p.add_argument("--smooth", type=float, default=1.35,
@@ -95,7 +103,14 @@ def parse_args() -> argparse.Namespace:
         help=("write the numerical inset information to a standalone LaTeX "
               "table source and omit the insets from the figure")
     )
-    return p.parse_args()
+    args = p.parse_args()
+
+    if args.samples is None:
+        args.samples = QUICK_SAMPLES if args.quick else 400_000
+    if args.batch_size is None:
+        args.batch_size = QUICK_BATCH_SIZE if args.quick else 50_000
+
+    return args
 
 
 def simulate_direct_r(

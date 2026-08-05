@@ -1,5 +1,4 @@
-r"""
-Matplotlib configuration for Astronomy & Astrophysics figures.
+r"""Matplotlib configuration used by the paper figure scripts.
 
 The dimensions are derived from the A&A ``aa.cls`` layout:
 
@@ -11,7 +10,7 @@ Typical use
 -----------
 
     import matplotlib.pyplot as plt
-    from schurcorr.plotting import aa_plot
+    from style import aa_plot
 
     aa_plot(column="single")
     fig, ax = plt.subplots()
@@ -23,9 +22,6 @@ Typical use
 Use ``revert_params()`` to restore the Matplotlib configuration that was
 active when this module was imported. For temporary settings, use
 ``aa_style()`` as a context manager.
-
-This module is used by :mod:`paper_plot_scripts` to reproduce the three
-figures of the paper's numerical-demonstrations section.
 """
 
 from __future__ import annotations

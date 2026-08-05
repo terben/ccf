@@ -1,17 +1,4 @@
-"""
-Levinson--Durbin recursions for Toeplitz correlation matrices.
-
-This module provides the numerical core of the :mod:`schurcorr` package.
-It implements the bijection between normalized correlation coefficients
-
-    r = (r_1, ..., r_N)
-
-and partial autocorrelation coefficients
-
-    alpha = (alpha_1, ..., alpha_N).
-
-The notation follows the accompanying paper.
-"""
+"""Levinson--Durbin transformations between correlations and PACFs."""
 
 from __future__ import annotations
 
@@ -23,7 +10,12 @@ from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
 
-_TOL = 1.0e-12
+# Absorbs float64 roundoff around exact admissibility/boundary values (see
+# DOCUMENTATION.md, "Tolerances"); unrelated to
+# schurcorr.bounds._BOUNDARY_CONTINUATION_TOL, which validates
+# already-computed forced continuations rather than roundoff at the
+# boundary itself.
+_ROUNDING_TOL = 1.0e-12
 
 
 class SingularToeplitzError(Exception):
@@ -139,219 +131,225 @@ def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
     return np.ascontiguousarray(array)
 
 
-class _LevinsonState:
+@dataclass(frozen=True, slots=True)
+class _LevinsonResult:
     """
-    Internal representation of a Levinson--Durbin recursion.
+    Terminal outcome of one forward Levinson--Durbin pass.
 
-    The state may be constructed either from normalized correlation
-    coefficients or from partial autocorrelation coefficients.
+    Every quantity here is ``O(N)``: unlike a full recursion trace (a
+    predictor array copied at every order, ``O(N^2)`` in total), nothing
+    that consumes this result -- :func:`pacf`, :func:`pacf_prefix`,
+    :func:`from_pacf`, or :mod:`schurcorr.bounds` -- needs more than the
+    terminal predictor plus the per-order scalars already produced along
+    the way.
 
-    Parameters
+    Attributes
     ----------
     r
-        Normalized correlation coefficients ``(r_1, ..., r_N)``.
+        Correlation coefficients actually reached, ``(r_1, ..., r_m)``.
     alpha
-        Partial autocorrelation coefficients
-        ``(alpha_1, ..., alpha_N)``.
+        Partial autocorrelations ``(alpha_1, ..., alpha_m)``.
     sigma2
-        Innovation variances
-        ``(sigma_0^2, ..., sigma_N^2)``.
-    predictor_coefficients
-        Predictor coefficients at each recursion order.
+        Innovation variances ``(sigma_0^2, ..., sigma_m^2)``.
+    prediction
+        Linear predictions ``(p_1, ..., p_m)`` computed along the way
+        (``p_1 = 0``); used by :func:`schurcorr.bounds.admissible_bounds`
+        to report bounds at every order without recomputing them.
+    reached_boundary
+        Whether the recursion stopped at the singular boundary rather
+        than exhausting the input.
+    terminal_phi
+        Predictor coefficients at the final order reached, or ``None`` if
+        the boundary was not reached (only meaningful there, see
+        :func:`schurcorr.bounds.extend_at_boundary`).
     """
 
-    def __init__(
-        self,
-        *,
-        r: FloatArray,
-        alpha: FloatArray,
-        sigma2: FloatArray,
-        predictor_coefficients: list[FloatArray],
-        reached_boundary: bool = False,
-    ) -> None:
-        self.r = r
-        self.alpha = alpha
-        self.sigma2 = sigma2
-        self.predictor_coefficients = predictor_coefficients
-        # Set by from_correlations (see below); always False for
-        # from_pacf, which cannot reach the boundary by construction.
-        self.reached_boundary = reached_boundary
+    r: FloatArray
+    alpha: FloatArray
+    sigma2: FloatArray
+    prediction: FloatArray
+    reached_boundary: bool
+    terminal_phi: FloatArray | None = None
 
-    @classmethod
-    def from_correlations(cls, r: ArrayLike) -> "_LevinsonState":
-        """
-        Construct the recursion state from correlation coefficients,
-        without an ``at_boundary`` mode: the recursion always proceeds as
-        far as the mathematics allows and reports how far it got via
-        ``reached_boundary`` on the returned state, instead of raising or
-        warning on a degenerate-but-admissible input. Still raises
-        :class:`ValueError` for a genuinely inadmissible input
-        (``abs(alpha_n) > 1`` beyond numerical tolerance) -- that case is
-        unrelated to the boundary (see docs/boundary_semantics.md).
 
-        The single canonical recursion shared by :func:`pacf` and
-        :func:`pacf_prefix`.
-        """
-        r_array = _asarray1d(r, name="r")
-        n_max = r_array.size
+def _run_levinson_from_correlations(r: ArrayLike) -> _LevinsonResult:
+    """
+    Run the forward recursion ``r -> alpha``, without an ``at_boundary``
+    mode: it always proceeds as far as the mathematics allows and reports
+    how far it got via ``reached_boundary``, instead of raising or
+    warning on a degenerate-but-admissible input. Still raises
+    :class:`ValueError` for a genuinely inadmissible input
+    (``abs(alpha_n) > 1`` beyond numerical tolerance) -- unrelated to the
+    boundary (see docs/boundary_semantics.md).
 
-        alpha_values: list[float] = []
-        sigma2_values: list[float] = [1.0]
-        predictors: list[FloatArray] = []
+    The single canonical recursion shared by :func:`pacf`,
+    :func:`pacf_prefix`, and :mod:`schurcorr.bounds`.
+    """
+    r_array = _asarray1d(r, name="r")
+    n_max = r_array.size
 
-        phi_buffer = np.empty(n_max, dtype=np.float64)
-        reached_boundary = False
+    alpha_values: list[float] = []
+    sigma2_values: list[float] = [1.0]
+    predictions: list[float] = []
 
-        for n in range(1, n_max + 1):
-            if sigma2_values[-1] <= _TOL:
-                reached_boundary = True
-                break
+    phi_buffer = np.empty(n_max, dtype=np.float64)
+    reached_boundary = False
 
-            if n == 1:
-                alpha_n = float(r_array[0])
-            else:
-                prediction = float(
-                    np.dot(
-                        phi_buffer[: n - 1],
-                        r_array[n - 2 :: -1],
-                    )
+    for n in range(1, n_max + 1):
+        if sigma2_values[-1] <= _ROUNDING_TOL:
+            reached_boundary = True
+            break
+
+        if n == 1:
+            prediction = 0.0
+            alpha_n = float(r_array[0])
+        else:
+            prediction = float(
+                np.dot(
+                    phi_buffer[: n - 1],
+                    r_array[n - 2 :: -1],
                 )
-                alpha_n = (
-                    float(r_array[n - 1]) - prediction
-                ) / sigma2_values[-1]
-
-            if abs(alpha_n) > 1.0 + _TOL:
-                raise ValueError(
-                    "Input correlations are not admissible: "
-                    f"computed abs(alpha_{n}) = "
-                    f"{abs(alpha_n):.6g} > 1."
-                )
-
-            at_boundary_hit = abs(alpha_n) >= 1.0
-            if at_boundary_hit:
-                alpha_n = float(np.sign(alpha_n))
-
-            if n == 1:
-                phi_buffer[0] = alpha_n
-            else:
-                phi_prev = phi_buffer[: n - 1].copy()
-                phi_buffer[: n - 1] = phi_prev - alpha_n * phi_prev[::-1]
-                phi_buffer[n - 1] = alpha_n
-
-            if at_boundary_hit:
-                alpha_values.append(alpha_n)
-                predictors.append(phi_buffer[:n].copy())
-                sigma2_values.append(0.0)
-                reached_boundary = True
-                break
-
-            sigma2_next = (
-                sigma2_values[-1]
-                * (1.0 - alpha_n * alpha_n)
             )
+            alpha_n = (
+                float(r_array[n - 1]) - prediction
+            ) / sigma2_values[-1]
 
-            if sigma2_next < 0.0 and sigma2_next > -_TOL:
-                sigma2_next = 0.0
-
-            alpha_values.append(float(alpha_n))
-            sigma2_values.append(float(sigma2_next))
-            predictors.append(phi_buffer[:n].copy())
-
-        number_computed = len(alpha_values)
-
-        return cls(
-            r=r_array[:number_computed].copy(),
-            alpha=np.asarray(
-                alpha_values,
-                dtype=np.float64,
-            ),
-            sigma2=np.asarray(
-                sigma2_values,
-                dtype=np.float64,
-            ),
-            predictor_coefficients=predictors,
-            reached_boundary=reached_boundary,
-        )
-
-    @classmethod
-    def from_pacf(cls, alpha: ArrayLike) -> "_LevinsonState":
-        """
-        Construct the recursion state from partial autocorrelations.
-        """
-        alpha_array = _asarray1d(alpha, name="alpha")
-
-        if np.any(np.abs(alpha_array) >= 1.0):
+        if abs(alpha_n) > 1.0 + _ROUNDING_TOL:
             raise ValueError(
-                "All PACF coefficients must satisfy abs(alpha_n) < 1."
+                "Input correlations are not admissible: "
+                f"computed abs(alpha_{n}) = "
+                f"{abs(alpha_n):.6g} > 1."
             )
 
-        n_max = alpha_array.size
+        at_boundary_hit = abs(alpha_n) >= 1.0
+        if at_boundary_hit:
+            alpha_n = float(np.sign(alpha_n))
 
-        # r_buffer[0] is the fixed r_0 = 1 term; r_buffer[1:n] holds
-        # r_1, ..., r_(n-1) once computed, so r_buffer[:n] is exactly
-        # the "r_with_zero" vector needed at step n -- avoids
-        # rebuilding it via np.concatenate at every step.
-        r_buffer = np.empty(n_max + 1, dtype=np.float64)
-        r_buffer[0] = 1.0
+        if n == 1:
+            phi_buffer[0] = alpha_n
+        else:
+            phi_prev = phi_buffer[: n - 1].copy()
+            phi_buffer[: n - 1] = phi_prev - alpha_n * phi_prev[::-1]
+            phi_buffer[n - 1] = alpha_n
 
-        sigma2_values: list[float] = [1.0]
-        predictors: list[FloatArray] = []
+        if at_boundary_hit:
+            alpha_values.append(alpha_n)
+            predictions.append(prediction)
+            sigma2_values.append(0.0)
+            reached_boundary = True
+            break
 
-        phi_buffer = np.empty(n_max, dtype=np.float64)
-
-        for n in range(1, n_max + 1):
-            alpha_n = float(alpha_array[n - 1])
-
-            if n == 1:
-                phi_buffer[0] = alpha_n
-                r_n = alpha_n
-            else:
-                phi_prev = phi_buffer[: n - 1].copy()
-                phi_buffer[: n - 1] = phi_prev - alpha_n * phi_prev[::-1]
-                phi_buffer[n - 1] = alpha_n
-
-                r_n = float(
-                    np.dot(
-                        phi_buffer[:n],
-                        r_buffer[n - 1 :: -1],
-                    )
-                )
-
-            r_buffer[n] = r_n
-
-            sigma2_next = (
-                sigma2_values[-1]
-                * (1.0 - alpha_n * alpha_n)
-            )
-
-            if sigma2_next < 0.0 and sigma2_next > -_TOL:
-                warnings.warn(
-                    "Innovation variance became slightly negative due "
-                    "to roundoff and was clamped to zero.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-                sigma2_next = 0.0
-
-            sigma2_values.append(float(sigma2_next))
-            predictors.append(phi_buffer[:n].copy())
-
-        return cls(
-            r=r_buffer[1:].copy(),
-            alpha=alpha_array.copy(),
-            sigma2=np.asarray(
-                sigma2_values,
-                dtype=np.float64,
-            ),
-            predictor_coefficients=predictors,
+        sigma2_next = (
+            sigma2_values[-1]
+            * (1.0 - alpha_n * alpha_n)
         )
+
+        if sigma2_next < 0.0 and sigma2_next > -_ROUNDING_TOL:
+            sigma2_next = 0.0
+
+        alpha_values.append(float(alpha_n))
+        predictions.append(prediction)
+        sigma2_values.append(float(sigma2_next))
+
+    number_computed = len(alpha_values)
+
+    return _LevinsonResult(
+        r=r_array[:number_computed].copy(),
+        alpha=np.asarray(alpha_values, dtype=np.float64),
+        sigma2=np.asarray(sigma2_values, dtype=np.float64),
+        prediction=np.asarray(predictions, dtype=np.float64),
+        reached_boundary=reached_boundary,
+        terminal_phi=(
+            phi_buffer[:number_computed].copy()
+            if reached_boundary
+            else None
+        ),
+    )
+
+
+def _run_levinson_from_pacf(alpha: ArrayLike) -> _LevinsonResult:
+    """
+    Run the inverse recursion ``alpha -> r``. Cannot reach the singular
+    boundary by construction (``abs(alpha_n) < 1`` is validated up
+    front), so ``reached_boundary`` is always ``False``.
+    """
+    alpha_array = _asarray1d(alpha, name="alpha")
+
+    if np.any(np.abs(alpha_array) >= 1.0):
+        raise ValueError(
+            "All PACF coefficients must satisfy abs(alpha_n) < 1."
+        )
+
+    n_max = alpha_array.size
+
+    # r_buffer[0] is the fixed r_0 = 1 term; r_buffer[1:n] holds
+    # r_1, ..., r_(n-1) once computed, so r_buffer[:n] is exactly
+    # the "r_with_zero" vector needed at step n -- avoids
+    # rebuilding it via np.concatenate at every step.
+    r_buffer = np.empty(n_max + 1, dtype=np.float64)
+    r_buffer[0] = 1.0
+
+    sigma2_values: list[float] = [1.0]
+    predictions: list[float] = []
+
+    phi_buffer = np.empty(n_max, dtype=np.float64)
+
+    for n in range(1, n_max + 1):
+        alpha_n = float(alpha_array[n - 1])
+
+        if n == 1:
+            phi_buffer[0] = alpha_n
+            prediction = 0.0
+            r_n = alpha_n
+        else:
+            phi_prev = phi_buffer[: n - 1].copy()
+
+            # p_n uses the order-n predictor phi^{(n)} (phi_prev, not yet
+            # updated to order n+1), matched against r_{n-1}, ..., r_1.
+            prediction = float(
+                np.dot(
+                    phi_prev,
+                    r_buffer[n - 1 : 0 : -1],
+                )
+            )
+            r_n = prediction + alpha_n * sigma2_values[-1]
+
+            phi_buffer[: n - 1] = phi_prev - alpha_n * phi_prev[::-1]
+            phi_buffer[n - 1] = alpha_n
+
+        r_buffer[n] = r_n
+        predictions.append(prediction)
+
+        sigma2_next = (
+            sigma2_values[-1]
+            * (1.0 - alpha_n * alpha_n)
+        )
+
+        if sigma2_next < 0.0 and sigma2_next > -_ROUNDING_TOL:
+            warnings.warn(
+                "Innovation variance became slightly negative due "
+                "to roundoff and was clamped to zero.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            sigma2_next = 0.0
+
+        sigma2_values.append(float(sigma2_next))
+
+    return _LevinsonResult(
+        r=r_buffer[1:].copy(),
+        alpha=alpha_array.copy(),
+        sigma2=np.asarray(sigma2_values, dtype=np.float64),
+        prediction=np.asarray(predictions, dtype=np.float64),
+        reached_boundary=False,
+    )
 
 
 def _pacf_2d_fast(r_array: FloatArray) -> FloatArray | None:
     """
     Vectorized fast path for :func:`pacf` over a 2-D batch.
 
-    Runs the same recursion as :meth:`_LevinsonState.from_correlations`,
+    Runs the same recursion as :func:`_run_levinson_from_correlations`,
     vectorized across the batch (sample) dimension instead of looping
     over rows in Python. Returns ``None`` -- instead of partial or
     incorrect output -- the moment any row would reach the singular
@@ -376,7 +374,7 @@ def _pacf_2d_fast(r_array: FloatArray) -> FloatArray | None:
     for n in range(1, n_max + 1):
         idx = n - 1
 
-        if np.any(sigma2 <= _TOL):
+        if np.any(sigma2 <= _ROUNDING_TOL):
             return None
 
         if n == 1:
@@ -409,7 +407,7 @@ def _from_pacf_2d(alpha_array: FloatArray) -> FloatArray:
     """
     Vectorized implementation of :func:`from_pacf` over a 2-D batch.
 
-    Runs the same recursion as :meth:`_LevinsonState.from_pacf`,
+    Runs the same recursion as :func:`_run_levinson_from_pacf`,
     vectorized across the batch (sample) dimension. Unlike
     :func:`_pacf_2d_fast`, no fallback is needed: for any
     ``abs(alpha_n) < 1`` (validated up front, for every row, exactly
@@ -432,7 +430,7 @@ def _from_pacf_2d(alpha_array: FloatArray) -> FloatArray:
         )
 
     # r_buffer[:, 0] is the fixed r_0 = 1 column; r_buffer[:, 1:n]
-    # holds r_1, ..., r_(n-1) once computed (see _LevinsonState.from_pacf).
+    # holds r_1, ..., r_(n-1) once computed (see _run_levinson_from_pacf).
     r_buffer = np.empty((n_samples, n_max + 1), dtype=np.float64)
     r_buffer[:, 0] = 1.0
     phi = np.empty((n_samples, n_max), dtype=np.float64)
@@ -491,50 +489,44 @@ class PrefixResult:
 
 def pacf_prefix(r: ArrayLike) -> PrefixResult:
     """
-    Boundary analysis: the maximal independent PACF prefix of ``r``.
+    Return the maximal PACF prefix of an admissible sequence.
 
-    Unlike :func:`pacf`, never raises :class:`SingularToeplitzError` -- a
-    degenerate-but-admissible ``r`` is the expected input here, not an
-    error (see docs/boundary_semantics.md, category 2). Still raises
-    :class:`ValueError` for a genuinely inadmissible ``r`` (category 3).
-    Never warns: reaching the boundary is this function's normal,
-    documented outcome, not a side-channel warning-worthy event.
-
-    1-D input only: batched boundary-prefix analysis has no current caller
-    (:func:`schurcorr.bounds.extend_at_boundary` and
-    :func:`schurcorr.bounds.admissible_bounds` are both 1-D), so it is
-    out of scope rather than speculative.
+    Use this function instead of :func:`pacf` when the sequence may reach
+    a degenerate boundary: unlike :func:`pacf`, it never raises
+    :class:`SingularToeplitzError` for a degenerate-but-admissible ``r``.
 
     Parameters
     ----------
     r
-        Normalized correlation coefficients ``(r_1, ..., r_N)``.
+        One-dimensional correlation sequence.
 
     Returns
     -------
     PrefixResult
+        PACF prefix and boundary information.
+
+    Raises
+    ------
+    ValueError
+        If ``r`` is not admissible.
     """
     r_array = _asarray1d(r, name="r")
-    state = _LevinsonState.from_correlations(r_array)
+    result = _run_levinson_from_correlations(r_array)
 
     return PrefixResult(
-        alpha=state.alpha,
-        order=state.alpha.size,
-        reached_boundary=state.reached_boundary,
-        sigma2=state.sigma2,
-        predictor=(
-            state.predictor_coefficients[-1]
-            if state.reached_boundary
-            else None
-        ),
+        alpha=result.alpha,
+        order=result.alpha.size,
+        reached_boundary=result.reached_boundary,
+        sigma2=result.sigma2,
+        predictor=result.terminal_phi,
     )
 
 
 def _pacf_1d_strict(r_array: FloatArray) -> FloatArray:
-    state = _LevinsonState.from_correlations(r_array)
+    result = _run_levinson_from_correlations(r_array)
 
-    if state.reached_boundary:
-        n = state.alpha.size
+    if result.reached_boundary:
+        n = result.alpha.size
         raise SingularToeplitzError(
             f"The Toeplitz matrix of order {n} is singular "
             f"(sigma_{n}^2 = 0); the r <-> alpha bijection breaks down at "
@@ -543,52 +535,40 @@ def _pacf_1d_strict(r_array: FloatArray) -> FloatArray:
             "forced continuation."
         )
 
-    return state.alpha
+    return result.alpha
 
 
 def pacf(r: ArrayLike) -> FloatArray:
     """
-    Compute partial autocorrelations from correlation coefficients.
-
-    Coordinate transformation: the bijection between admissible
-    correlation functions and their independent PACF coordinates.
-    Raises :class:`SingularToeplitzError` unconditionally if the
-    recursion reaches a degenerate boundary (see
-    docs/boundary_semantics.md, category 2) -- use :func:`pacf_prefix`
-    for the boundary-inclusive analysis, or
-    :func:`schurcorr.bounds.extend_at_boundary` for the deterministic
-    continuation past it.
+    Convert correlation coefficients to partial autocorrelations.
 
     Parameters
     ----------
     r
-        Normalized correlation coefficients, either a 1-D array
-        ``(r_1, ..., r_N)`` or a 2-D batch of ``n_samples`` such
-        sequences with shape ``(n_samples, N)``. For a 2-D batch, the
-        recursion is applied independently to each row (the same
-        recursion as for the 1-D case, not a different algorithm),
-        vectorized across rows for performance whenever no row reaches
-        the singular boundary; a batch with a boundary-reaching or
-        inadmissible row falls back internally to the per-row scalar
-        path. The vectorized path is not guaranteed bit-identical to
-        looping :func:`pacf` over rows -- the summation order of the
-        internal prediction differs by up to a few ULP -- though both
-        compute the same recursion.
+        Correlation coefficients with shape ``(N,)`` or ``(M, N)``. For a
+        2-D batch, each row is treated as an independent sequence; a row
+        that raises reports its own index in the error message.
 
     Returns
     -------
-    alpha
-        Partial autocorrelation coefficients, the same shape as ``r``.
+    numpy.ndarray
+        Partial autocorrelations with the same shape as ``r``.
 
     Raises
     ------
     SingularToeplitzError
-        If the recursion reaches a singular Toeplitz matrix (in any row,
-        for a 2-D batch).
+        If the recursion reaches a degenerate boundary (``sigma_n^2 =
+        0``); use :func:`pacf_prefix` for the boundary-inclusive prefix,
+        or :func:`schurcorr.bounds.extend_at_boundary` for the
+        deterministic continuation past it.
     ValueError
-        If ``r`` is not admissible (``abs(alpha_n) > 1`` for some ``n``,
-        beyond numerical tolerance) -- unrelated to the boundary case
-        above, see docs/boundary_semantics.md, category 3.
+        If ``r`` is not an admissible correlation sequence.
+
+    Examples
+    --------
+    >>> r = from_pacf([0.5, -0.3, 0.2])
+    >>> pacf(r)
+    array([ 0.5, -0.3,  0.2])
     """
     r_array = _asarray_batchable(r, name="r")
 
@@ -615,34 +595,28 @@ def pacf(r: ArrayLike) -> FloatArray:
 
 def from_pacf(alpha: ArrayLike) -> FloatArray:
     """
-    Reconstruct correlations from partial autocorrelations.
+    Convert partial autocorrelations to correlation coefficients.
 
     Parameters
     ----------
     alpha
-        Partial autocorrelation coefficients, either a 1-D array
-        ``(alpha_1, ..., alpha_N)`` or a 2-D batch of ``n_samples`` such
-        sequences with shape ``(n_samples, N)``. For a 2-D batch, the
-        recursion is applied independently to each row (the same
-        recursion as for the 1-D case, not a different algorithm),
-        vectorized across rows for performance -- unlike :func:`pacf`,
-        no fallback is needed here, since ``abs(alpha_n) < 1`` (checked
-        for every row up front) already guarantees every row stays
-        clear of the singular boundary.
+        Partial autocorrelations with shape ``(N,)`` or ``(M, N)``.
+        Entries must lie strictly between -1 and 1. For a 2-D batch,
+        each row is treated as an independent sequence.
 
     Returns
     -------
-    r
-        Normalized correlation coefficients, the same shape as ``alpha``.
+    numpy.ndarray
+        Correlation coefficients with the same shape as ``alpha``.
 
     Raises
     ------
     ValueError
-        If any ``abs(alpha_n) >= 1``.
+        If an entry lies outside ``(-1, 1)``.
     """
     alpha_array = _asarray_batchable(alpha, name="alpha")
 
     if alpha_array.ndim == 1:
-        return _LevinsonState.from_pacf(alpha_array).r
+        return _run_levinson_from_pacf(alpha_array).r
 
     return _from_pacf_2d(alpha_array)

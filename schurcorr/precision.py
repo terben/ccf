@@ -1,32 +1,8 @@
-"""
-Arbitrary-precision (mpmath) counterpart to the Levinson--Durbin recursion.
+"""Arbitrary-precision PACF transformations.
 
-This module is the arbitrary-precision counterpart to the plain
-``numpy``/``float64`` recursion in :mod:`schurcorr.levinson`. It is kept
-in its own module -- reached via the standalone public functions
-:func:`pacf_mp` / :func:`from_pacf_mp`, not a ``backend=`` parameter on
-:func:`schurcorr.levinson.pacf` -- so that the ``numpy``-only bijection
-code stays visually and structurally separate from the ``mpmath``-
-precision code: the two solve genuinely different problems.
-``levinson.py`` implements the ``r <-> alpha`` bijection itself; this
-module is a numerical-conditioning stress test of that same recursion at
-arbitrary working precision (see :func:`recommended_dps`).
-
-For random ``alpha`` drawn independently over many lags, the residual
-variance ``sigma_n^2 = prod_(i<n) (1 - alpha_i^2)`` decays
-geometrically (the same product that appears as the Jacobian
-``det(dr/dalpha)``, see :func:`schurcorr.coordinates.jacobian`). Once
-``sigma_n^2`` is smaller than ``float64``'s own rounding unit, the
-difference ``r_n - p_n = alpha_n * sigma_n^2`` that the recursion
-needs is no longer representable, and the information about
-``alpha_n`` is lost -- not recoverable by any downstream algorithm.
-This module sidesteps the limit by carrying the whole computation at
-a working precision high enough that ``sigma_n^2`` never underflows
-relative to that precision's own rounding unit.
-
-References
-----------
-Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
+Standalone ``mpmath`` counterpart to :mod:`schurcorr.levinson`, for
+sequences where ``sigma_n^2`` underflows ``float64`` (see
+:func:`recommended_dps`).
 """
 
 from __future__ import annotations
@@ -67,23 +43,38 @@ def recommended_dps(
         Recommended value for ``mpmath``'s working precision in
         decimal places (``dps``).
 
+    Raises
+    ------
+    ValueError
+        If ``n_max`` is not a positive integer, or ``safety_margin``
+        is negative.
+
     Notes
     -----
-    Empirically, the recursion loses about ``0.45`` decimal digits of
-    precision per lag for ``alpha`` drawn from ``(-0.95, 0.95)`` (the
-    wider of the two bounds used in the paper's roundtrip figure),
-    independent of the working precision itself -- this is the
-    conditioning loss described in the module docstring, not a
-    property of ``float64`` specifically. The formula below is a
-    conservative, deliberately simple affine fit to that empirical
-    rate; it is calibrated for ``b=0.95`` and therefore also safe
-    (with some margin to spare) for the narrower ``b=0.9`` case used
-    alongside it in the same figure.
+    This is an empirical recommendation for roundtrip calculations, not
+    a mathematically guaranteed minimum precision. Empirically, the
+    recursion loses about ``0.45`` decimal digits of precision per lag
+    for ``alpha`` drawn from ``(-0.95, 0.95)`` (the wider of the two
+    bounds used in the paper's roundtrip figure), independent of the
+    working precision itself -- this is the conditioning loss described
+    in the module docstring, not a property of ``float64``
+    specifically. The formula below is a conservative, deliberately
+    simple affine fit to that empirical rate; it is calibrated for
+    ``b=0.95`` and therefore also safe (with some margin to spare) for
+    the narrower ``b=0.9`` case used alongside it in the same figure.
 
     References
     ----------
     Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
     """
+    if n_max < 1 or n_max != int(n_max):
+        raise ValueError(f"n_max must be a positive integer; got {n_max!r}.")
+
+    if safety_margin < 0:
+        raise ValueError(
+            f"safety_margin must be non-negative; got {safety_margin!r}."
+        )
+
     return math.ceil(0.45 * n_max) + abs(target_exponent) + safety_margin
 
 
@@ -94,14 +85,10 @@ def pacf_mp(
     at_boundary: BoundaryModeMp = "raise",
 ) -> list[mp.mpf]:
     """
-    Recovery recursion ``r -> alpha`` at arbitrary precision.
+    Convert correlation coefficients to partial autocorrelations, at
+    arbitrary ``mpmath`` precision.
 
-    Standalone arbitrary-precision counterpart to
-    :func:`schurcorr.levinson.pacf`; only the number type changes, from
-    ``float64`` to ``mpmath.mpf`` at an explicitly chosen working
-    precision. Use this directly rather than a ``backend=`` parameter on
-    :func:`schurcorr.levinson.pacf` (which does not have one -- see
-    docs/boundary_semantics.md).
+    Arbitrary-precision counterpart to :func:`schurcorr.levinson.pacf`.
 
     Parameters
     ----------
@@ -144,6 +131,15 @@ def pacf_mp(
 
     Notes
     -----
+    Unlike the ``float64`` path (split into :func:`schurcorr.levinson.pacf`
+    and :func:`schurcorr.levinson.pacf_prefix`), ``at_boundary`` stays a
+    mode parameter here: reaching the boundary at arbitrary precision
+    almost always means ``dps`` was insufficient rather than a genuine
+    boundary sequence, so the two cases this module actually needs to
+    distinguish are "raise" and "return the reliable prefix" -- a third,
+    boundary-aware entry point would add API surface without a
+    proportionate clarity gain for this comparatively rare path.
+
     Complexity is ``O(N^2)`` recursion steps, as in the ``float64``
     version, but each arithmetic operation costs more than a
     ``float64`` operation, and that cost grows with ``dps`` (which in
@@ -226,12 +222,10 @@ def from_pacf_mp(
     dps: int | None = None,
 ) -> list[mp.mpf]:
     """
-    Forward recursion ``alpha -> r`` at arbitrary precision.
+    Reconstruct correlation coefficients from partial autocorrelations,
+    at arbitrary ``mpmath`` precision.
 
-    Standalone arbitrary-precision counterpart to
-    :func:`schurcorr.levinson.from_pacf`; only the number type changes,
-    from ``float64`` to ``mpmath.mpf`` at an explicitly chosen working
-    precision.
+    Arbitrary-precision counterpart to :func:`schurcorr.levinson.from_pacf`.
 
     Parameters
     ----------
@@ -267,23 +261,26 @@ def from_pacf_mp(
     ----------
     Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
     """
-    import numpy as np
+    from .levinson import _as_sequence_1d
 
-    from .levinson import _asarray1d
-
-    alpha_array = _asarray1d(alpha, name="alpha")
-    if np.any(np.abs(alpha_array) >= 1.0):
-        raise ValueError(
-            "All PACF coefficients must satisfy abs(alpha_n) < 1."
-        )
-    alpha = alpha_array.tolist()
+    alpha = _as_sequence_1d(alpha, name="alpha")
 
     n_max = len(alpha)
     if dps is None:
         dps = recommended_dps(n_max)
 
     with mp.workdps(dps):
+        # Promote directly to mpf at working precision -- alpha may
+        # already carry more than float64 precision (e.g. mpf inputs from
+        # a prior high-dps call), so admissibility is also checked here,
+        # not via a float64 round-trip beforehand.
         alpha_mp = [mp.mpf(a) for a in alpha]
+
+        if any(abs(a) >= 1 for a in alpha_mp):
+            raise ValueError(
+                "All PACF coefficients must satisfy abs(alpha_n) < 1."
+            )
+
         r: list[mp.mpf] = []
         sigma_sq: list[mp.mpf] = [mp.mpf(1)]
         phi: list[mp.mpf] = []

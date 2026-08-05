@@ -1,35 +1,10 @@
 # schurcorr
 
-`schurcorr` is a lightweight companion package accompanying the paper
-
-> Natural Coordinates for Constrained Correlation Functions:
-> Partial Autocorrelations and the Geometry of Positive Power Spectra
-
-The package implements the correspondence between admissible correlation
-functions and partial autocorrelation coefficients (PACFs), providing
-
-- Levinson–Durbin forward recursion (`r -> alpha`) and inverse recursion
-  (`alpha -> r`)
-- boundary analysis (`pacf_prefix`) and deterministic continuation past the
-  degenerate boundary (`extend_at_boundary`)
-- Schneider–Hartlap admissible bounds and coordinates
-- Fisher coordinates, innovation variances, and Jacobians
-- arbitrary-precision recursion (`pacf_mp` / `from_pacf_mp`) for
-  ill-conditioned, high-order sequences
-- numerical demonstrations accompanying the paper (`paper_plot_scripts/`).
-
-## Quick start
-
-```python
-import schurcorr as sc
-
-alpha = sc.pacf(r)
-r_reconstructed = sc.from_pacf(alpha)
-y = sc.fisher(alpha)
-```
-
-See `examples/pacf_roundtrip.py` for a runnable script, including the
-boundary-analysis functions.
+Reference code for "Natural Coordinates for Constrained Correlation
+Functions: Partial Autocorrelations and the Geometry of Positive Power
+Spectra" (Erben, in preparation): the bijection between admissible
+correlation coefficients and partial autocorrelations (PACFs), and the
+Schneider--Hartlap admissible-region geometry it makes explicit.
 
 ## Installation
 
@@ -37,27 +12,92 @@ boundary-analysis functions.
 pip install -e .
 ```
 
-To also install the test dependencies:
+The core package depends only on NumPy. Optional functionality (figure
+reproduction, symbolic verification, arbitrary precision, tests) is
+installed via extras -- see [Optional dependencies](#optional-dependencies).
+
+Alternatively, `./install.sh` sets up a conda environment
+(`schurcorr.yml`) with every optional dependency and runs the test suite.
+
+## Minimal example
+
+```python
+import numpy as np
+import schurcorr as sc
+
+alpha = np.array([0.5, -0.3, 0.2])
+r = sc.from_pacf(alpha)
+alpha_recovered = sc.pacf(r)
+
+print(r)
+print(alpha_recovered)
+```
+
+## Central functions
+
+| Concept                | Function                             |
+| ----------------------- | ------------------------------------- |
+| `r -> alpha`            | `schurcorr.pacf`                      |
+| `alpha -> r`            | `schurcorr.from_pacf`                 |
+| boundary analysis       | `schurcorr.pacf_prefix`               |
+| admissible intervals    | `schurcorr.admissible_bounds`         |
+| Fisher coordinates      | `schurcorr.fisher` / `inverse_fisher` |
+| arbitrary precision     | `schurcorr.pacf_mp` / `from_pacf_mp`  |
+| didactic reference form | `schurcorr.reference`                 |
+
+`pacf`, `from_pacf`, `pacf_prefix`, `admissible_bounds`, `fisher`, and
+`inverse_fisher` are the primary API. `check_admissibility`,
+`extend_at_boundary`, `innovation_variances`, `jacobian`/`log_jacobian`,
+`admissible_volume`/`log_admissible_volume`, and the arbitrary-precision
+functions form an extended API for boundary handling, diagnostics, and
+high-order or ill-conditioned sequences.
+
+For the boundary semantics (degenerate but admissible sequences vs.
+genuinely inadmissible ones), see `docs/boundary_semantics.md`. For the
+exact index correspondence between the paper's notation and the code
+(e.g. `sigma2`), see `docs/notation.md`.
+
+## Reference implementation
+
+`schurcorr.reference` provides `pacf_reference` and `from_pacf_reference`:
+short, single-sequence, loop-based implementations that follow the
+paper's Levinson--Durbin recursion (Eqs. ld_p-ld_sigma) line by line,
+for readers checking the code against the equations. They are not used
+internally; `schurcorr.pacf` / `from_pacf` are the robust, batched,
+boundary-aware implementation used throughout the package and its tests.
+
+```python
+from schurcorr.reference import pacf_reference, from_pacf_reference
+```
+
+## Reproducing the figures
+
+```bash
+python paper_plot_scripts/figure_geometry.py
+python paper_plot_scripts/figure_roundtrip.py --quick
+python paper_plot_scripts/figure_gaussianization.py --quick
+```
+
+Drop `--quick` (or pass `--paper`) to reproduce the publication-quality
+figures at their full sample sizes; this is significantly slower. Output
+is written to `figs/`.
+
+## Optional dependencies
+
+```bash
+pip install -e ".[plots]"      # matplotlib, scipy -- figure reproduction
+pip install -e ".[symbolic]"   # sympy -- schurcorr.symbolic
+pip install -e ".[precision]"  # mpmath -- pacf_mp / from_pacf_mp
+pip install -e ".[test]"       # pytest, statsmodels, and all of the above
+pip install -e ".[all]"        # plots + symbolic + precision
+```
+
+## Tests
 
 ```bash
 pip install -e ".[test]"
+pytest
 ```
-
-Alternatively, using the provided conda environment:
-
-```bash
-conda env create -f schurcorr.yml
-conda activate schurcorr
-```
-
-## Requirements
-
-* Python ≥ 3.10
-* NumPy
-* SciPy
-* SymPy
-* Matplotlib
-* mpmath
 
 ## License
 

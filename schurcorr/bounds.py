@@ -1,25 +1,4 @@
-"""
-Schneider--Hartlap admissible bounds and coordinates.
-
-This module connects the admissible intervals introduced by
-Schneider and Hartlap with the Levinson--Durbin recursion.
-
-For fixed preceding correlation coefficients
-
-    r_1, ..., r_(n-1),
-
-the next coefficient satisfies
-
-    r_(n, lower) <= r_n <= r_(n, upper).
-
-The centre of this interval is the linear prediction p_n and its
-half-width is the preceding innovation variance sigma_(n-1)^2.
-
-The normalized Schneider--Hartlap coordinate is identical to the
-partial autocorrelation coefficient,
-
-    x_n = alpha_n.
-"""
+"""Admissible correlation bounds and boundary continuation."""
 
 from __future__ import annotations
 
@@ -27,16 +6,20 @@ import math
 
 import numpy as np
 from numpy.typing import ArrayLike
-from scipy.special import gammaln
 
 from .levinson import (
     FloatArray,
     _asarray1d,
-    _LevinsonState,
+    _run_levinson_from_correlations,
     pacf,
 )
 
-_CONSISTENCY_TOL = 1.0e-8
+# Looser than schurcorr.levinson._ROUNDING_TOL by design (see
+# DOCUMENTATION.md, "Tolerances"): this compares a *supplied* coefficient
+# against the Toeplitz-forced continuation computed from it, an
+# order-dependent chain of products that amplifies roundoff faster than
+# the single-step comparisons _ROUNDING_TOL is used for.
+_BOUNDARY_CONTINUATION_TOL = 1.0e-8
 
 
 def _forced_continuation(phi: FloatArray, window: list[float]) -> float:
@@ -65,88 +48,50 @@ def admissible_bounds(
     r: ArrayLike,
 ) -> tuple[FloatArray, FloatArray]:
     """
-    Compute successive Schneider--Hartlap admissible bounds.
+    Compute successive admissible bounds for a correlation sequence.
 
-    For every supplied coefficient ``r_n``, the function computes the
-    lower and upper bounds implied by the preceding coefficients
-    ``r_1, ..., r_(n-1)``.
+    For every supplied coefficient ``r_n``, the bounds are implied by the
+    preceding coefficients ``r_1, ..., r_(n-1)`` alone.
 
     Parameters
     ----------
     r
-        Normalized correlation coefficients
-        ``(r_1, ..., r_N)``.
+        One-dimensional correlation sequence.
 
     Returns
     -------
-    r_lower
-        Successive lower bounds
-        ``(r_(1, lower), ..., r_(N, lower))``.
-    r_upper
-        Successive upper bounds
-        ``(r_(1, upper), ..., r_(N, upper))``.
+    r_lower, r_upper
+        Lower and upper bounds for each supplied coefficient.
 
     Raises
     ------
     ValueError
-        If ``r`` is not one-dimensional or does not define an
-        admissible Toeplitz correlation sequence.
+        If ``r`` is not admissible.
 
     Notes
     -----
-    At order ``n``, the admissible interval has the form
-
-    ``p_n - sigma_(n-1)^2 <= r_n <= p_n + sigma_(n-1)^2``,
-
-    where ``p_n`` is the linear prediction from the preceding
-    correlation coefficients.
-
-    If ``r`` reaches the singular boundary of the admissible region
-    (``sigma_(m-1)^2 = 0`` for some order ``m <= N``) within its given
-    length, every further coefficient is uniquely forced (see
-    :func:`extend_at_boundary`) and has no freedom left, so its bounds
-    collapse to a single point, ``r_(n, lower) = r_(n, upper) = r_n``.
-    Entries past the boundary are validated against that forced
-    continuation, not just checked for presence; a ``ValueError`` is
-    raised if they are inconsistent with it.
+    At order ``n``, the interval is ``p_n -+ sigma_(n-1)^2``, centred on
+    the linear prediction ``p_n``. At a degenerate boundary, subsequent
+    bounds collapse to the uniquely determined continuation (see
+    :func:`extend_at_boundary`); coefficients supplied past that point
+    are validated against it, not merely checked for presence.
     """
     r_array = _asarray1d(r, name="r")
-    state = _LevinsonState.from_correlations(r_array)
+    result = _run_levinson_from_correlations(r_array)
 
-    number_computed = state.r.size
+    number_computed = result.r.size
 
-    r_lower = np.empty(
-        number_computed,
-        dtype=np.float64,
-    )
-    r_upper = np.empty(
-        number_computed,
-        dtype=np.float64,
-    )
+    # r_(n, lower/upper) = p_n -+ sigma_(n-1)^2; result.sigma2[:number_computed]
+    # holds exactly sigma_0^2, ..., sigma_(m-1)^2, the half-width at each step.
+    half_width = result.sigma2[:number_computed]
+    r_lower = result.prediction - half_width
+    r_upper = result.prediction + half_width
 
-    for n in range(1, number_computed + 1):
-        if n == 1:
-            prediction = 0.0
-            half_width = 1.0
-        else:
-            predictor = state.predictor_coefficients[n - 2]
-
-            prediction = float(
-                np.dot(
-                    predictor,
-                    state.r[n - 2 :: -1],
-                )
-            )
-            half_width = float(state.sigma2[n - 1])
-
-        r_lower[n - 1] = prediction - half_width
-        r_upper[n - 1] = prediction + half_width
-
-    if not state.reached_boundary:
+    if not result.reached_boundary:
         return r_lower, r_upper
 
-    phi = state.predictor_coefficients[-1]
-    window = list(state.r)
+    phi = result.terminal_phi
+    window = list(result.r)
     excess = r_array[number_computed:]
     extra_bounds = np.empty(excess.size, dtype=np.float64)
 
@@ -155,7 +100,10 @@ def admissible_bounds(
         supplied = float(supplied_raw)
 
         if not np.isclose(
-            forced, supplied, rtol=_CONSISTENCY_TOL, atol=_CONSISTENCY_TOL
+            forced,
+            supplied,
+            rtol=_BOUNDARY_CONTINUATION_TOL,
+            atol=_BOUNDARY_CONTINUATION_TOL,
         ):
             raise ValueError(
                 f"r_{number_computed + i + 1} = {supplied!r} is "
@@ -176,70 +124,46 @@ def admissible_bounds(
 
 def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     """
-    Extend an admissible correlation sequence past its singular
-    boundary using the unique Toeplitz-forced continuation.
+    Extend a sequence from a degenerate boundary.
 
     Parameters
     ----------
     r
-        Normalized correlation coefficients ``(r_1, ..., r_N)`` that
-        reach the singular boundary of the admissible region
-        (``sigma_(m-1)^2 = 0`` for some order ``m <= N``) within the
-        supplied length. Entries already supplied past the boundary
-        are validated against the forced continuation rather than
-        overwritten.
+        Admissible sequence ending at a degenerate boundary
+        (``sigma_(m-1)^2 = 0`` for some order ``m``). Entries already
+        supplied past the boundary are validated against the forced
+        continuation rather than overwritten.
     n_extra
-        Number of further coefficients to generate past the boundary.
-        Must be at least the number of entries ``r`` already supplies
-        past the boundary.
+        Number of coefficients to append. Must be at least the number
+        of entries ``r`` already supplies past the boundary.
 
     Returns
     -------
     numpy.ndarray
-        The extended correlation sequence, of length
-        ``(m - 1) + n_extra``, where ``m`` is the first order at
-        which the Toeplitz matrix is singular.
+        The extended correlation sequence.
 
     Raises
     ------
     ValueError
-        If ``n_extra`` is negative; if ``r`` does not reach the
-        boundary within its given length (this function is only
-        meaningful once ``sigma_n^2 = 0`` has actually been reached,
-        e.g. as checked via ``pacf_prefix(r)``); if
-        ``n_extra`` is smaller than the number of entries ``r``
-        already supplies past the boundary; or if those entries are
-        inconsistent with the forced continuation (i.e. ``r`` is not
-        realizable by any nonnegative power spectrum past that
-        point).
+        If ``r`` does not end at a valid degenerate boundary, if
+        ``n_extra`` is negative or smaller than the number of entries
+        ``r`` already supplies past the boundary, or if those entries
+        are inconsistent with the forced continuation.
 
     Notes
     -----
-    See Sect. 5 of the CCF paper and ``SH_research_note.pdf`` (Erben
-    2026), "Toeplitz Determinants and Admissible Correlation
-    Intervals". Let ``m`` be the first order at which the Toeplitz
-    correlation matrix ``A_m`` (built from ``r_1, ..., r_(m-1)``) is
-    singular. Because ``A_m`` is singular, it has a null vector
-    ``w = (w_0, ..., w_(m-1))`` with ``w_0 != 0``; normalizing
-    ``w_0 = 1`` identifies ``w`` with the terminal Levinson--Durbin
-    predictor coefficients, ``w = (1, -phi_1, ..., -phi_(m-1))``,
-    where ``phi = phi^{(m-1)}`` is the predictor at the point the
-    recursion reaches the boundary. Every further coefficient is then
-    forced by the linear recurrence
-
-    ``r_(m+s) = sum_(j=1)^(m-1) phi_j * r_(m+s-j)``, ``s >= 0``,
-
-    i.e. repeated application of the same fixed-order linear
-    predictor that produced the boundary -- there is no further
-    freedom.
+    The continuation is the unique linear recurrence forced by the null
+    vector of the singular Toeplitz matrix at the boundary, given by the
+    terminal Levinson--Durbin predictor; see Sect. 5 of the paper and
+    ``SH_research_note.pdf`` for the derivation.
     """
     if n_extra < 0:
         raise ValueError("n_extra must be non-negative.")
 
     r_array = _asarray1d(r, name="r")
-    state = _LevinsonState.from_correlations(r_array)
+    result = _run_levinson_from_correlations(r_array)
 
-    if not state.reached_boundary:
+    if not result.reached_boundary:
         raise ValueError(
             "r does not reach the singular boundary of the admissible "
             "region within its given length; extend_at_boundary is "
@@ -247,8 +171,8 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
             "reached. Check with pacf_prefix(r) first."
         )
 
-    prefix_len = state.r.size
-    phi = state.predictor_coefficients[-1]
+    prefix_len = result.r.size
+    phi = result.terminal_phi
 
     existing_excess = r_array[prefix_len:]
 
@@ -261,7 +185,7 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
             "prefix of r."
         )
 
-    window = list(state.r)
+    window = list(result.r)
     generated: list[float] = []
 
     for s in range(n_extra):
@@ -271,7 +195,10 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
             supplied = float(existing_excess[s])
 
             if not np.isclose(
-                r_next, supplied, rtol=_CONSISTENCY_TOL, atol=_CONSISTENCY_TOL
+                r_next,
+                supplied,
+                rtol=_BOUNDARY_CONTINUATION_TOL,
+                atol=_BOUNDARY_CONTINUATION_TOL,
             ):
                 raise ValueError(
                     f"Supplied r_{prefix_len + s + 1} = {supplied!r} is "
@@ -287,34 +214,16 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
         window = window[1:] + [r_next]
 
     return np.concatenate(
-        [state.r, np.asarray(generated, dtype=np.float64)]
+        [result.r, np.asarray(generated, dtype=np.float64)]
     )
 
 
 def sh_coordinates(r: ArrayLike) -> FloatArray:
-    """
-    Compute Schneider--Hartlap coordinates.
+    """Alias of :func:`pacf`.
 
-    Parameters
-    ----------
-    r
-        Normalized correlation coefficients
-        ``(r_1, ..., r_N)``.
-
-    Returns
-    -------
-    numpy.ndarray
-        Schneider--Hartlap coordinates
-        ``(x_1, ..., x_N)``.
-
-    Notes
-    -----
-    The Schneider--Hartlap coordinates are identical to the partial
-    autocorrelation coefficients,
-
-    ``x_n = alpha_n``.
-
-    The implementation therefore delegates directly to :func:`pacf`.
+    The Schneider--Hartlap coordinate ``x_n`` and the partial
+    autocorrelation ``alpha_n`` are the same quantity (``x_n = alpha_n``);
+    kept for readers coming from the Schneider--Hartlap notation.
     """
     return pacf(r)
 
@@ -408,8 +317,8 @@ def log_admissible_volume(N: int) -> float:
 
     Notes
     -----
-    Computed in log-space via ``scipy.special.gammaln``, since the
-    underlying product
+    Computed in log-space via ``math.lgamma``, since the underlying
+    product
 
     ``V_N = 2 * prod_(j=1)^(N-1) sqrt(pi) * j! / Gamma(j + 3/2)``
 
@@ -427,10 +336,13 @@ def log_admissible_volume(N: int) -> float:
     if N == 1:
         return math.log(2.0)
 
-    j = np.arange(1, N, dtype=np.float64)
-    log_terms = 0.5 * math.log(math.pi) + gammaln(j + 1.0) - gammaln(j + 1.5)
+    half_log_pi = 0.5 * math.log(math.pi)
+    log_terms = (
+        half_log_pi + math.lgamma(j + 1.0) - math.lgamma(j + 1.5)
+        for j in range(1, N)
+    )
 
-    return math.log(2.0) + float(np.sum(log_terms))
+    return math.log(2.0) + math.fsum(log_terms)
 
 
 def admissible_volume(N: int) -> float:

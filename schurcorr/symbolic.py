@@ -1,13 +1,4 @@
-"""
-Symbolic calculations for positive Toeplitz correlation matrices.
-
-This module provides SymPy-based expressions for small recursion orders.
-It is intended for mathematical verification, testing, and illustrative
-examples accompanying the paper.
-
-The numerical implementation in :mod:`schurcorr.levinson` does not depend
-on this module.
-"""
+"""Symbolic low-order expressions and identities used for verification."""
 
 from __future__ import annotations
 
@@ -236,7 +227,7 @@ def pacf_symbolic(order: int) -> sp.Expr:
     >>> pacf_symbolic(1)
     r1
     >>> pacf_symbolic(2)
-    (-r1**2 + r2)/(1 - r1**2)
+    (r1**2 - r2)/((r1 - 1)*(r1 + 1))
     """
     return sp.factor(_symbolic_state(order).alpha[-1])
 

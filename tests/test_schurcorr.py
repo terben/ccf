@@ -1,8 +1,3 @@
-import matplotlib
-
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 import mpmath as mp
 import numpy as np
 import scipy.linalg as sla
@@ -10,7 +5,12 @@ import sympy as sp
 import pytest
 import schurcorr as sc
 
-from schurcorr import plotting, symbolic
+from schurcorr.symbolic import (
+    admissible_bounds_symbolic,
+    pacf_symbolic,
+    toeplitz_matrix,
+    verify_x_equals_alpha,
+)
 
 
 def test_pacf_roundtrip():
@@ -254,7 +254,6 @@ def test_pacf_mpmath_custom_dps():
 
 
 def _volume_symbolic(N):
-    j = sp.symbols("j", positive=True, integer=True)
     prod = sp.Integer(1)
     for jj in range(1, N):
         prod *= sp.sqrt(sp.pi) * sp.factorial(jj) / sp.gamma(jj + sp.Rational(3, 2))
@@ -602,13 +601,6 @@ def test_log_jacobian_matches_jacobian():
     np.testing.assert_allclose(np.log(j), log_j, rtol=1e-12, atol=1e-12)
 
 
-from schurcorr.symbolic import (
-    admissible_bounds_symbolic,
-    pacf_symbolic,
-    toeplitz_matrix,
-    verify_x_equals_alpha,
-)
-
 def test_symbolic_toeplitz_matrix():
     r1, r2 = sp.symbols("r1 r2", real=True)
 
@@ -645,94 +637,3 @@ def test_symbolic_sh_coordinate_equals_pacf(order):
     assert verify_x_equals_alpha(order) == 0
 
 
-# --- plotting ----------------------------------------------------------------
-
-
-def test_aa_plot_single_column_width():
-    plotting.aa_plot(column="single", use_tex=False)
-    try:
-        fig, ax = plt.subplots()
-        width, height = fig.get_size_inches()
-
-        np.testing.assert_allclose(width, plotting.AA_COLUMN_WIDTH)
-        np.testing.assert_allclose(
-            plotting.AA_COLUMN_WIDTH_MM, 90.0, rtol=1e-12
-        )
-        np.testing.assert_allclose(
-            height, width * plotting.GOLDEN_RATIO, rtol=1e-12
-        )
-        plt.close(fig)
-    finally:
-        plotting.revert_params()
-
-
-def test_aa_plot_double_column_width():
-    plotting.aa_plot(column="double", use_tex=False)
-    try:
-        fig, ax = plt.subplots()
-        width, height = fig.get_size_inches()
-
-        np.testing.assert_allclose(width, plotting.AA_TEXT_WIDTH)
-        np.testing.assert_allclose(
-            plotting.AA_TEXT_WIDTH_MM, 184.0, rtol=1e-12
-        )
-        plt.close(fig)
-    finally:
-        plotting.revert_params()
-
-
-def test_aa_plot_runs_and_saves_figure(tmp_path):
-    plotting.aa_plot(column="single", use_tex=False)
-    try:
-        fig, ax = plt.subplots()
-        ax.plot([0, 1, 2], [0, 1, 4])
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-
-        out = tmp_path / "figure.pdf"
-        fig.savefig(out)
-        plt.close(fig)
-
-        assert out.exists()
-        assert out.stat().st_size > 0
-    finally:
-        plotting.revert_params()
-
-
-def test_aa_plot_invalid_column_raises():
-    with pytest.raises(ValueError):
-        plotting.aa_plot(column="triple", use_tex=False)
-
-
-def test_aa_plot_custom_dimensions():
-    plotting.aa_plot(fig_width=5.0, fig_height=3.0, use_tex=False)
-    try:
-        fig, ax = plt.subplots()
-        width, height = fig.get_size_inches()
-
-        np.testing.assert_allclose(width, 5.0)
-        np.testing.assert_allclose(height, 3.0)
-        plt.close(fig)
-    finally:
-        plotting.revert_params()
-
-
-def test_aa_style_context_manager_reverts_afterwards():
-    original_figsize = matplotlib.rcParams["figure.figsize"]
-
-    with plotting.aa_style(column="double", use_tex=False):
-        assert matplotlib.rcParams["figure.figsize"][0] == pytest.approx(
-            plotting.AA_TEXT_WIDTH
-        )
-
-    assert matplotlib.rcParams["figure.figsize"] == original_figsize
-
-
-def test_revert_params_restores_original_config():
-    original = dict(plotting.ORIGINAL_MATPLOTLIB_CONFIG)
-
-    plotting.aa_plot(column="single", use_tex=False)
-    plotting.revert_params()
-
-    assert matplotlib.rcParams["figure.figsize"] == original["figure.figsize"]
-    assert matplotlib.rcParams["font.size"] == original["font.size"]
