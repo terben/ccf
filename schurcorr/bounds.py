@@ -30,10 +30,9 @@ from numpy.typing import ArrayLike
 from scipy.special import gammaln
 
 from .levinson import (
-    _TOL,
     FloatArray,
-    _LevinsonState,
     _asarray1d,
+    _LevinsonState,
     pacf,
 )
 
@@ -112,7 +111,7 @@ def admissible_bounds(
     raised if they are inconsistent with it.
     """
     r_array = _asarray1d(r, name="r")
-    state = _LevinsonState.from_correlations(r_array, at_boundary="warn")
+    state = _LevinsonState.from_correlations(r_array)
 
     number_computed = state.r.size
 
@@ -143,7 +142,7 @@ def admissible_bounds(
         r_lower[n - 1] = prediction - half_width
         r_upper[n - 1] = prediction + half_width
 
-    if number_computed == r_array.size:
+    if not state.reached_boundary:
         return r_lower, r_upper
 
     phi = state.predictor_coefficients[-1]
@@ -207,7 +206,7 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
         If ``n_extra`` is negative; if ``r`` does not reach the
         boundary within its given length (this function is only
         meaningful once ``sigma_n^2 = 0`` has actually been reached,
-        e.g. as checked via ``pacf(r, at_boundary='warn')``); if
+        e.g. as checked via ``pacf_prefix(r)``); if
         ``n_extra`` is smaller than the number of entries ``r``
         already supplies past the boundary; or if those entries are
         inconsistent with the forced continuation (i.e. ``r`` is not
@@ -238,14 +237,14 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
         raise ValueError("n_extra must be non-negative.")
 
     r_array = _asarray1d(r, name="r")
-    state = _LevinsonState.from_correlations(r_array, at_boundary="warn")
+    state = _LevinsonState.from_correlations(r_array)
 
-    if state.sigma2[-1] > _TOL:
+    if not state.reached_boundary:
         raise ValueError(
             "r does not reach the singular boundary of the admissible "
             "region within its given length; extend_at_boundary is "
             "only meaningful once sigma_n^2 = 0 has actually been "
-            "reached. Check with pacf(r, at_boundary='warn') first."
+            "reached. Check with pacf_prefix(r) first."
         )
 
     prefix_len = state.r.size
@@ -463,7 +462,7 @@ def admissible_volume(N: int) -> float:
     underflows to exactly ``0.0`` in ``float64`` for large ``N``; use
     :func:`log_admissible_volume` instead in that regime, following
     the numerical-robustness convention used elsewhere in the package
-    for products of many factors (see :func:`schurcorr.levinson.jacobian`
-    / :func:`schurcorr.levinson.log_jacobian`).
+    for products of many factors (see :func:`schurcorr.coordinates.jacobian`
+    / :func:`schurcorr.coordinates.log_jacobian`).
     """
     return float(np.exp(log_admissible_volume(N)))

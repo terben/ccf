@@ -17,18 +17,7 @@ The package provides routines for
 - Jacobian determinants.
 """
 
-from ._levinson_mp import recommended_dps
-from .levinson import (
-    SingularToeplitzError,
-    fisher,
-    from_pacf,
-    innovation_variances,
-    inverse_fisher,
-    jacobian,
-    log_jacobian,
-    pacf,
-)
-from .sh_bounds import (
+from .bounds import (
     admissible_bounds,
     admissible_volume,
     check_admissibility,
@@ -36,23 +25,42 @@ from .sh_bounds import (
     log_admissible_volume,
     sh_coordinates,
 )
+from .coordinates import (
+    fisher,
+    innovation_variances,
+    inverse_fisher,
+    jacobian,
+    log_jacobian,
+)
+from .levinson import (
+    PrefixResult,
+    SingularToeplitzError,
+    from_pacf,
+    pacf,
+    pacf_prefix,
+)
+from .precision import from_pacf_mp, pacf_mp, recommended_dps
 
 __all__ = [
-    "pacf",
-    "from_pacf",
-    "fisher",
-    "inverse_fisher",
-    "innovation_variances",
-    "jacobian",
-    "log_jacobian",
+    "PrefixResult",
+    "SingularToeplitzError",
     "admissible_bounds",
-    "sh_coordinates",
+    "admissible_volume",
     "check_admissibility",
     "extend_at_boundary",
-    "admissible_volume",
+    "fisher",
+    "from_pacf",
+    "from_pacf_mp",
+    "innovation_variances",
+    "inverse_fisher",
+    "jacobian",
     "log_admissible_volume",
+    "log_jacobian",
+    "pacf",
+    "pacf_mp",
+    "pacf_prefix",
     "recommended_dps",
-    "SingularToeplitzError",
+    "sh_coordinates",
 ]
 
 __version__ = "0.1.2"

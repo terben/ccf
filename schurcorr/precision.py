@@ -1,20 +1,21 @@
 """
-mpmath backend for the Levinson--Durbin recursion.
+Arbitrary-precision (mpmath) counterpart to the Levinson--Durbin recursion.
 
 This module is the arbitrary-precision counterpart to the plain
-``numpy``/``float64`` recursion in :mod:`schurcorr.levinson`. It is
-kept in its own module, reached only via ``backend='mpmath'``, so
-that the ``numpy``-only bijection code stays visually and
-structurally separate from the ``mpmath``-precision code: the two
-solve genuinely different problems. ``levinson.py`` implements the
-``r <-> alpha`` bijection itself; this module is a numerical-
-conditioning stress test of that same recursion at arbitrary working
-precision (see :func:`recommended_dps`).
+``numpy``/``float64`` recursion in :mod:`schurcorr.levinson`. It is kept
+in its own module -- reached via the standalone public functions
+:func:`pacf_mp` / :func:`from_pacf_mp`, not a ``backend=`` parameter on
+:func:`schurcorr.levinson.pacf` -- so that the ``numpy``-only bijection
+code stays visually and structurally separate from the ``mpmath``-
+precision code: the two solve genuinely different problems.
+``levinson.py`` implements the ``r <-> alpha`` bijection itself; this
+module is a numerical-conditioning stress test of that same recursion at
+arbitrary working precision (see :func:`recommended_dps`).
 
 For random ``alpha`` drawn independently over many lags, the residual
 variance ``sigma_n^2 = prod_(i<n) (1 - alpha_i^2)`` decays
 geometrically (the same product that appears as the Jacobian
-``det(dr/dalpha)``, see :func:`schurcorr.levinson.jacobian`). Once
+``det(dr/dalpha)``, see :func:`schurcorr.coordinates.jacobian`). Once
 ``sigma_n^2`` is smaller than ``float64``'s own rounding unit, the
 difference ``r_n - p_n = alpha_n * sigma_n^2`` that the recursion
 needs is no longer representable, and the information about
@@ -86,19 +87,21 @@ def recommended_dps(
     return math.ceil(0.45 * n_max) + abs(target_exponent) + safety_margin
 
 
-def _pacf_mp(
+def pacf_mp(
     r: Sequence[float],
     *,
-    dps: int | None,
-    at_boundary: BoundaryModeMp,
+    dps: int | None = None,
+    at_boundary: BoundaryModeMp = "raise",
 ) -> list[mp.mpf]:
     """
     Recovery recursion ``r -> alpha`` at arbitrary precision.
 
-    Structurally the same recursion as
-    :func:`schurcorr.levinson.pacf` (``backend='float64'``); only the
-    number type changes, from ``float64`` to ``mpmath.mpf`` at an
-    explicitly chosen working precision.
+    Standalone arbitrary-precision counterpart to
+    :func:`schurcorr.levinson.pacf`; only the number type changes, from
+    ``float64`` to ``mpmath.mpf`` at an explicitly chosen working
+    precision. Use this directly rather than a ``backend=`` parameter on
+    :func:`schurcorr.levinson.pacf` (which does not have one -- see
+    docs/boundary_semantics.md).
 
     Parameters
     ----------
@@ -133,6 +136,11 @@ def _pacf_mp(
         variance ``<= 0`` is encountered, i.e. ``dps`` was not high
         enough for the input sequence, or the boundary of the
         admissible region was genuinely reached.
+    ValueError
+        If ``at_boundary`` is not ``'raise'`` or ``'warn'`` (in
+        particular, ``'extend'`` is not supported at arbitrary
+        precision; use :func:`schurcorr.bounds.extend_at_boundary`,
+        which operates on ``r`` directly and has no ``mpmath`` variant).
 
     Notes
     -----
@@ -146,6 +154,16 @@ def _pacf_mp(
     ----------
     Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
     """
+    if at_boundary not in ("raise", "warn"):
+        raise ValueError(
+            "at_boundary must be 'raise' or 'warn' for pacf_mp (no "
+            f"'extend' support at arbitrary precision); got {at_boundary!r}."
+        )
+
+    from .levinson import _as_sequence_1d
+
+    r = _as_sequence_1d(r, name="r")
+
     n_max = len(r)
     if dps is None:
         dps = recommended_dps(n_max)
@@ -202,18 +220,18 @@ def _pacf_mp(
     return alpha
 
 
-def _from_pacf_mp(
+def from_pacf_mp(
     alpha: Sequence[float],
     *,
-    dps: int | None,
+    dps: int | None = None,
 ) -> list[mp.mpf]:
     """
     Forward recursion ``alpha -> r`` at arbitrary precision.
 
-    Structurally the same recursion as
-    :func:`schurcorr.levinson.from_pacf` (``backend='float64'``);
-    only the number type changes, from ``float64`` to ``mpmath.mpf``
-    at an explicitly chosen working precision.
+    Standalone arbitrary-precision counterpart to
+    :func:`schurcorr.levinson.from_pacf`; only the number type changes,
+    from ``float64`` to ``mpmath.mpf`` at an explicitly chosen working
+    precision.
 
     Parameters
     ----------
@@ -234,15 +252,32 @@ def _from_pacf_mp(
         ``mpf`` values -- deliberately not downcast to ``float64``;
         the caller decides when (and whether) to round.
 
+    Raises
+    ------
+    ValueError
+        If ``alpha`` is not one-dimensional, or if any
+        ``abs(alpha_n) >= 1``.
+
     Notes
     -----
-    Complexity is ``O(N^2)`` recursion steps; see :func:`_pacf_mp`
+    Complexity is ``O(N^2)`` recursion steps; see :func:`pacf_mp`
     for the same remark on wall-clock scaling with ``dps``.
 
     References
     ----------
     Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
     """
+    import numpy as np
+
+    from .levinson import _asarray1d
+
+    alpha_array = _asarray1d(alpha, name="alpha")
+    if np.any(np.abs(alpha_array) >= 1.0):
+        raise ValueError(
+            "All PACF coefficients must satisfy abs(alpha_n) < 1."
+        )
+    alpha = alpha_array.tolist()
+
     n_max = len(alpha)
     if dps is None:
         dps = recommended_dps(n_max)

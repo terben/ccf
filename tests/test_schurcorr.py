@@ -29,56 +29,24 @@ def test_pacf_default_raises_at_boundary():
         sc.pacf(r)
 
 
-def test_pacf_warn_at_boundary_returns_truncated():
+def test_pacf_prefix_returns_truncated_alpha_at_boundary():
     r = np.array([1.0, 0.5, 0.3])
 
-    with pytest.warns(RuntimeWarning):
-        alpha = sc.pacf(r, at_boundary="warn")
+    result = sc.pacf_prefix(r)
 
-    np.testing.assert_allclose(alpha, [1.0])
-
-
-def test_pacf_extend_at_boundary_simple_order1():
-    # r_1 = 1 forces every subsequent correlation to also equal 1.
-    r = np.array([1.0, 1.0, 1.0])
-
-    alpha = sc.pacf(r, at_boundary="extend")
-
-    np.testing.assert_allclose(alpha, [1.0, 1.0, 1.0])
+    assert result.reached_boundary
+    np.testing.assert_allclose(result.alpha, [1.0])
 
 
-def test_pacf_extend_at_boundary_rejects_inconsistent_tail():
-    r = np.array([1.0, 0.5, 0.3])
-
-    with pytest.raises(ValueError, match="inconsistent"):
-        sc.pacf(r, at_boundary="extend")
-
-
-def test_pacf_extend_not_at_boundary_behaves_normally():
+def test_pacf_and_pacf_prefix_agree_at_interior_points():
     alpha = np.array([0.2, -0.3, 0.4])
     r = sc.from_pacf(alpha)
 
-    np.testing.assert_allclose(
-        sc.pacf(r, at_boundary="extend"), alpha, rtol=1e-12, atol=1e-12
-    )
+    result = sc.pacf_prefix(r)
 
-
-def test_pacf_invalid_at_boundary_raises_value_error():
-    alpha = np.array([0.2, -0.3, 0.4])
-    r = sc.from_pacf(alpha)
-
-    with pytest.raises(ValueError):
-        sc.pacf(r, at_boundary="bogus")
-
-
-def test_pacf_not_at_boundary_unaffected_by_at_boundary():
-    alpha = np.array([0.2, -0.3, 0.4])
-    r = sc.from_pacf(alpha)
-
+    assert not result.reached_boundary
     np.testing.assert_allclose(sc.pacf(r), alpha, rtol=1e-12, atol=1e-12)
-    np.testing.assert_allclose(
-        sc.pacf(r, at_boundary="warn"), alpha, rtol=1e-12, atol=1e-12
-    )
+    np.testing.assert_allclose(result.alpha, alpha, rtol=1e-12, atol=1e-12)
 
 
 def test_fisher_roundtrip():
@@ -116,8 +84,7 @@ def test_extend_at_boundary_order1():
 def test_extend_at_boundary_null_vector_matches_scipy():
     r = _order3_boundary_sequence()
 
-    with pytest.warns(RuntimeWarning):
-        r_ext = sc.extend_at_boundary(r, n_extra=3)
+    r_ext = sc.extend_at_boundary(r, n_extra=3)
 
     # A_4, built from r_1, r_2, r_3, must be singular, and the
     # phi-derived null vector used internally must be proportional
@@ -130,8 +97,7 @@ def test_extend_at_boundary_null_vector_matches_scipy():
     assert null_space.shape == (4, 1)
     w = null_space[:, 0]
 
-    with pytest.warns(RuntimeWarning):
-        alpha_ext = sc.pacf(r, at_boundary="extend")
+    alpha_ext = sc.pacf_prefix(r).alpha
 
     phi = -w[1:] / w[0]
     predicted_r4 = float(np.dot(phi, r[::-1]))
@@ -142,8 +108,7 @@ def test_extend_at_boundary_null_vector_matches_scipy():
 def test_extend_at_boundary_recurrence_holds_for_generated_values():
     r = _order3_boundary_sequence()
 
-    with pytest.warns(RuntimeWarning):
-        r_ext = sc.extend_at_boundary(r, n_extra=4)
+    r_ext = sc.extend_at_boundary(r, n_extra=4)
 
     # every extended matrix A_(4+s) must remain singular
     for k in range(4, len(r_ext) + 1):
@@ -155,11 +120,8 @@ def test_extend_at_boundary_recurrence_holds_for_generated_values():
 def test_extend_at_boundary_validates_consistent_prefix():
     r = _order3_boundary_sequence()
 
-    with pytest.warns(RuntimeWarning):
-        r_ext = sc.extend_at_boundary(r, n_extra=2)
-
-    with pytest.warns(RuntimeWarning):
-        r_ext_again = sc.extend_at_boundary(r_ext, n_extra=2)
+    r_ext = sc.extend_at_boundary(r, n_extra=2)
+    r_ext_again = sc.extend_at_boundary(r_ext, n_extra=2)
 
     np.testing.assert_allclose(r_ext_again, r_ext)
 
@@ -193,26 +155,13 @@ def test_extend_at_boundary_requires_boundary_reached():
         sc.extend_at_boundary(r, n_extra=2)
 
 
-def test_pacf_extend_batched():
-    r_no_boundary = sc.from_pacf(np.array([0.2, -0.3, 0.4]))
-    r_boundary = np.array([1.0, 1.0, 1.0])
-
-    with pytest.warns(RuntimeWarning):
-        alpha_batch = sc.pacf(
-            np.stack([r_no_boundary, r_boundary]), at_boundary="extend"
-        )
-
-    np.testing.assert_allclose(alpha_batch[0], [0.2, -0.3, 0.4])
-    np.testing.assert_allclose(alpha_batch[1], [1.0, 1.0, 1.0])
-
-
 # --- mpmath backend ---------------------------------------------------------
 
 
 def test_from_pacf_mpmath_matches_float64():
     alpha = [0.2, -0.3, 0.4]
 
-    r_mp = sc.from_pacf(alpha, backend="mpmath")
+    r_mp = sc.from_pacf_mp(alpha)
     r_f64 = sc.from_pacf(np.array(alpha))
 
     assert all(isinstance(x, mp.mpf) for x in r_mp)
@@ -223,9 +172,9 @@ def test_from_pacf_mpmath_matches_float64():
 
 def test_pacf_mpmath_matches_float64():
     alpha = [0.2, -0.3, 0.4]
-    r = sc.from_pacf(alpha, backend="mpmath")
+    r = sc.from_pacf_mp(alpha)
 
-    alpha_back_mp = sc.pacf(r, backend="mpmath")
+    alpha_back_mp = sc.pacf_mp(r)
     alpha_back_f64 = sc.pacf(np.array([float(x) for x in r]))
 
     assert all(isinstance(x, mp.mpf) for x in alpha_back_mp)
@@ -242,8 +191,8 @@ def test_pacf_mpmath_roundtrip_high_order():
     alpha = rng.uniform(-0.9, 0.9, size=60).tolist()
     dps = sc.recommended_dps(len(alpha), safety_margin=30)
 
-    r = sc.from_pacf(alpha, backend="mpmath", dps=dps)
-    alpha_back = sc.pacf(r, backend="mpmath", dps=dps)
+    r = sc.from_pacf_mp(alpha, dps=dps)
+    alpha_back = sc.pacf_mp(r, dps=dps)
 
     for a, a_back in zip(alpha, alpha_back):
         assert abs(mp.mpf(a) - a_back) < mp.mpf("1e-12")
@@ -258,14 +207,14 @@ def test_pacf_mpmath_default_raises_at_boundary():
     r = [1.0, 0.5, 0.3]
 
     with pytest.raises(sc.SingularToeplitzError):
-        sc.pacf(r, backend="mpmath")
+        sc.pacf_mp(r)
 
 
 def test_pacf_mpmath_warn_returns_truncated():
     r = [1.0, 0.5, 0.3]
 
     with pytest.warns(RuntimeWarning):
-        alpha = sc.pacf(r, backend="mpmath", at_boundary="warn")
+        alpha = sc.pacf_mp(r, at_boundary="warn")
 
     assert len(alpha) == 1
     assert alpha[0] == mp.mpf(1)
@@ -275,38 +224,25 @@ def test_pacf_mpmath_extend_not_supported():
     r = [1.0, 0.5, 0.3]
 
     with pytest.raises(ValueError, match="extend"):
-        sc.pacf(r, backend="mpmath", at_boundary="extend")
+        sc.pacf_mp(r, at_boundary="extend")
 
 
 def test_pacf_mpmath_rejects_2d_input():
     r = np.array([[0.2, 0.1], [0.3, -0.1]])
 
     with pytest.raises(ValueError):
-        sc.pacf(r, backend="mpmath")
+        sc.pacf_mp(r)
 
 
 def test_from_pacf_mpmath_rejects_invalid_alpha():
     with pytest.raises(ValueError):
-        sc.from_pacf([0.2, 1.5], backend="mpmath")
-
-
-def test_pacf_invalid_backend_raises_value_error():
-    with pytest.raises(ValueError):
-        sc.pacf(np.array([0.2, -0.3]), backend="bogus")
-
-
-def test_dps_rejected_for_float64_backend():
-    with pytest.raises(ValueError):
-        sc.pacf(np.array([0.2, -0.3]), dps=50)
-
-    with pytest.raises(ValueError):
-        sc.from_pacf(np.array([0.2, -0.3]), dps=50)
+        sc.from_pacf_mp([0.2, 1.5])
 
 
 def test_pacf_mpmath_custom_dps():
     alpha_in = [0.2, -0.3, 0.4]
-    r = sc.from_pacf(alpha_in, backend="mpmath", dps=50)
-    alpha = sc.pacf(r, backend="mpmath", dps=50)
+    r = sc.from_pacf_mp(alpha_in, dps=50)
+    alpha = sc.pacf_mp(r, dps=50)
 
     assert mp.mp.dps != 50  # workdps must not leak into the global context
     np.testing.assert_allclose(
@@ -468,21 +404,6 @@ def test_batched_pacf_raise_reports_offending_sample():
         sc.pacf(r)
 
 
-def test_batched_pacf_warn_pads_truncated_row_with_nan():
-    r = np.array([
-        [0.2, 0.1, 0.05],
-        [1.0, 0.5, 0.3],
-    ])
-
-    with pytest.warns(RuntimeWarning):
-        alpha = sc.pacf(r, at_boundary="warn")
-
-    assert alpha.shape == r.shape
-    np.testing.assert_allclose(alpha[0], [0.2, 0.0625, 0.01960784], rtol=1e-6)
-    assert alpha[1, 0] == 1.0
-    assert np.all(np.isnan(alpha[1, 1:]))
-
-
 def test_batched_from_pacf_reports_offending_sample():
     alpha = np.array([
         [0.1, 0.2],
@@ -544,9 +465,12 @@ def test_batched_pacf_and_from_pacf_large_scale_match_looped_1d():
 
 def test_batched_pacf_fallback_matches_per_row_semantics():
     # A batch where one row hits the boundary must give exactly the
-    # same result as before the fast path was introduced (raise,
-    # warn+NaN-pad, extend), since it falls back to the untouched
-    # per-row scalar loop.
+    # same result as before the fast path was introduced, since it
+    # falls back to the untouched per-row scalar loop: pacf() raises
+    # with the offending sample index, and pacf_prefix()/
+    # extend_at_boundary() applied to that row directly still recover
+    # the boundary-inclusive prefix / forced continuation (pacf_prefix
+    # is 1-D only, so there is no batched equivalent to compare here).
     r_mixed = np.array([
         [0.2, 0.1, 0.05, 0.02],
         [1.0, 1.0, 1.0, 1.0],
@@ -556,18 +480,12 @@ def test_batched_pacf_fallback_matches_per_row_semantics():
     with pytest.raises(sc.SingularToeplitzError, match="sample 1"):
         sc.pacf(r_mixed)
 
-    with pytest.warns(RuntimeWarning):
-        alpha_warn = sc.pacf(r_mixed, at_boundary="warn")
+    result = sc.pacf_prefix(r_mixed[1])
+    assert result.reached_boundary
+    np.testing.assert_allclose(result.alpha, [1.0])
 
-    assert alpha_warn[1, 0] == 1.0
-    assert np.all(np.isnan(alpha_warn[1, 1:]))
-    np.testing.assert_allclose(alpha_warn[0], sc.pacf(r_mixed[0]))
-    np.testing.assert_allclose(alpha_warn[2], sc.pacf(r_mixed[2]))
-
-    with pytest.warns(RuntimeWarning):
-        alpha_ext = sc.pacf(r_mixed, at_boundary="extend")
-
-    np.testing.assert_allclose(alpha_ext[1], [1.0, 1.0, 1.0, 1.0])
+    r_ext = sc.extend_at_boundary(r_mixed[1], n_extra=4)
+    assert np.all(r_ext == 1.0)
 
 
 def test_from_pacf_2d_never_needs_fallback_near_boundary():
@@ -632,8 +550,7 @@ def test_check_admissibility_false():
 
 
 def test_admissible_bounds_boundary_consistent_tail_collapses_to_point():
-    with pytest.warns(RuntimeWarning):
-        r_lower, r_upper = sc.admissible_bounds(np.array([1.0, 1.0]))
+    r_lower, r_upper = sc.admissible_bounds(np.array([1.0, 1.0]))
 
     np.testing.assert_allclose(r_lower, [-1.0, 1.0])
     np.testing.assert_allclose(r_upper, [1.0, 1.0])
@@ -648,23 +565,18 @@ def test_check_admissibility_true_at_boundary_order1():
     # r_1 = 1 forces r_2 = 1 too; this is a legitimate degenerate
     # (positive semidefinite but singular) correlation sequence, not
     # an inadmissible one.
-    with pytest.warns(RuntimeWarning):
-        assert sc.check_admissibility(np.array([1.0, 1.0]))
+    assert sc.check_admissibility(np.array([1.0, 1.0]))
 
 
 def test_check_admissibility_false_at_boundary_inconsistent_tail():
-    with pytest.warns(RuntimeWarning):
-        assert not sc.check_admissibility(np.array([1.0, 0.5]))
+    assert not sc.check_admissibility(np.array([1.0, 0.5]))
 
 
 def test_check_admissibility_true_at_boundary_higher_order():
     r = _order3_boundary_sequence()
+    r_ext = sc.extend_at_boundary(r, n_extra=3)
 
-    with pytest.warns(RuntimeWarning):
-        r_ext = sc.extend_at_boundary(r, n_extra=3)
-
-    with pytest.warns(RuntimeWarning):
-        assert sc.check_admissibility(r_ext)
+    assert sc.check_admissibility(r_ext)
 
 
 def test_invalid_alpha_from_pacf():
