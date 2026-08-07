@@ -13,20 +13,7 @@ _MAX_SYMBOLIC_ORDER = 6
 
 @dataclass(frozen=True, slots=True)
 class _SymbolicLevinsonState:
-    """
-    Internal symbolic representation of a Levinson recursion.
-
-    Attributes
-    ----------
-    r
-        Correlation symbols ``(r1, ..., rN)``.
-    alpha
-        Symbolic partial autocorrelation coefficients.
-    sigma2
-        Innovation variances, including ``sigma_0^2 = 1``.
-    predictor_coefficients
-        Prediction coefficients at each recursion order.
-    """
+    """Internal state of the symbolic Levinson recursion."""
 
     r: tuple[sp.Symbol, ...]
     alpha: tuple[sp.Expr, ...]
@@ -134,12 +121,7 @@ def toeplitz_determinant(size: int) -> sp.Expr:
 
 @lru_cache(maxsize=None)
 def _symbolic_state(order: int) -> _SymbolicLevinsonState:
-    """
-    Compute the symbolic Levinson state up to a given order.
-
-    The implementation uses the same sign and indexing conventions as
-    :func:`schurcorr.levinson.pacf`.
-    """
+    """Return the cached symbolic Levinson state through the requested order."""
     _validate_symbolic_order(order)
 
     r = correlation_symbols(order)

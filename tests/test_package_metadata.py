@@ -1,6 +1,11 @@
 """Tests for package metadata and the public import surface."""
 
+import builtins
+import importlib
 import importlib.metadata
+import sys
+
+import pytest
 
 import schurcorr as sc
 
@@ -31,3 +36,21 @@ def test_mpmath_dependent_names_present_when_mpmath_installed():
     for name in ("pacf_mp", "from_pacf_mp", "recommended_dps"):
         assert hasattr(sc, name)
         assert name in sc.__all__
+
+
+def test_import_error_unrelated_to_mpmath_is_not_swallowed(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "mpmath":
+            raise ModuleNotFoundError(
+                "No module named 'not_mpmath'", name="not_mpmath"
+            )
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.delitem(sys.modules, "schurcorr", raising=False)
+    monkeypatch.delitem(sys.modules, "schurcorr.precision", raising=False)
+
+    with pytest.raises(ModuleNotFoundError, match="not_mpmath"):
+        importlib.import_module("schurcorr")

@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
-"""Figure 3 (fig:qg_transport in CCF.tex), Sect. 5.3 -- the quasi-Gaussian
-structural closure test.
+"""Reproduce the quasi-Gaussian closure test from Sect. 5.3.
 
-1. Simulate M realizations of the normalized correlation coefficients r_n
-   of a periodic one-dimensional Gaussian field with N=32 grid points and
-   a Gaussian power spectrum, L k0 = 80 (Wilking & Schneider 2013).
-2. Convert r -> alpha with the Levinson-Durbin recursion and then
-   y_n = atanh(alpha_n).
-3. Fit a multivariate Gaussian to the complete y-vector (mean and full
-   covariance), draw a transported sample, and map y -> alpha -> r.
-4. Compare the direct and transported r-marginals for selected lags.
+Simulates direct correlation samples from a periodic 1-D Gaussian field,
+transports them through a multivariate Gaussian fit in Fisher (y) space,
+and compares direct vs. transported r-marginals at selected lags.
 
 Run:
     python paper_plot_scripts/figure_gaussianization.py --quick
     python paper_plot_scripts/figure_gaussianization.py
 
---quick uses a small M for a fast functional check; the default M=400000
-matches WS2013 and is significantly slower.
+--quick uses a small sample count for a fast functional check; the default
+matches the publication sample size (M=400000) and is significantly
+slower.
 
 Writes a PDF and, unless --no-png is passed, a PNG preview.
 """

@@ -10,9 +10,19 @@ and the paper's ``sigma_n^2``.
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
-from .levinson import FloatArray, _asarray1d
+FloatArray = NDArray[np.float64]
+
+
+def _as_reference_array(x: ArrayLike, *, name: str) -> FloatArray:
+    """Return input as a contiguous one-dimensional float64 array."""
+    array = np.asarray(x, dtype=np.float64)
+
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a one-dimensional array.")
+
+    return array
 
 
 def pacf_reference(r: ArrayLike) -> FloatArray:
@@ -37,7 +47,7 @@ def pacf_reference(r: ArrayLike) -> FloatArray:
         If ``r`` is not one-dimensional, or if the sequence is not
         admissible (interior).
     """
-    r = _asarray1d(r, name="r")
+    r = _as_reference_array(r, name="r")
     n_max = r.size
 
     alpha = [0.0] * n_max
@@ -97,7 +107,7 @@ def from_pacf_reference(alpha: ArrayLike) -> FloatArray:
         If ``alpha`` is not one-dimensional, or an entry lies outside
         ``(-1, 1)``.
     """
-    alpha = _asarray1d(alpha, name="alpha")
+    alpha = _as_reference_array(alpha, name="alpha")
     n_max = alpha.size
 
     if np.any(np.abs(alpha) >= 1.0):

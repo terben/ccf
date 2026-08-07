@@ -1,198 +1,124 @@
-# Degenerate boundary semantics — design note
+# Degenerate boundary semantics
 
-Status: **implemented.** This note was written as Phase 1b of the migration
-described in `CLAUDE.md`, proposing the public API that Phases 2–6 then
-built: `pacf`/`from_pacf`/`pacf_prefix` in `schurcorr/levinson.py` as
-described below, `extend_at_boundary`/`admissible_bounds` in
-`schurcorr/bounds.py`, and `pacf_mp`/`from_pacf_mp` in
-`schurcorr/precision.py`. It remains the reference for *why* the boundary
-handling is split the way it is.
+## Overview
 
-## Why this note exists
+A correlation sequence `r` is admissible if its Toeplitz matrix is positive
+semidefinite at every order. The Levinson--Durbin recursion that maps `r` to
+partial autocorrelations `alpha` divides by the innovation variance
+`sigma_n^2` at each step, so it is a genuine bijection only where
+`sigma_n^2 > 0`. `sigma_n^2` can reach exactly zero for an otherwise
+perfectly admissible `r`: the sequence has simply run out of independent
+degrees of freedom. This is a legitimate, *admissible* state, not an error,
+and the package treats it as a distinct case throughout rather than folding
+it into either "valid interior point" or "invalid input."
 
-`CLAUDE.md` requires four cases to be told apart explicitly before the
-numerical core is rewritten:
+Four cases need to be told apart:
 
-1. admissible interior points,
-2. mathematically degenerate boundary points,
-3. inadmissible correlation sequences,
-4. numerical breakdown caused by finite precision.
+1. admissible interior sequences,
+2. admissible degenerate boundary sequences,
+3. inadmissible sequences,
+4. finite-precision ambiguity between the above.
 
-The current implementation (`schurcorr/levinson.py`, `schurcorr/sh_bounds.py`,
-`schurcorr/_levinson_mp.py`) already distinguishes these correctly at the
-*mathematical* level, but exposes the distinction through a single function,
-`pacf(r, at_boundary=...)`, using mode strings (`'raise'`, `'warn'`,
-`'extend'`) plus a separate `backend=` dispatch parameter. `CLAUDE.md` names
-both of these patterns as things to avoid. This note works out what the
-resulting three-function split (coordinate transformation / boundary analysis
-/ deterministic continuation) should look like.
+All four are read off one quantity: the innovation-variance trace
+`sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the single scalar
+Levinson recursion shared by `pacf`, `pacf_prefix`, and `schurcorr.bounds`
+(`schurcorr.levinson._run_levinson_from_correlations`). The sections below
+are different readings of that one recursion's output, not different
+algorithms.
 
-## The recursion state, once per category
+## 1. Interior sequences
 
-All four categories are read off the same quantity: the innovation-variance
-sequence `sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the Levinson
-recursion (`_LevinsonState` in `levinson.py`), together with `alpha_n` at
-each order. There is and should remain exactly one recursion that computes
-this trace; the categories below are different *readings* of its output, not
-different algorithms.
+**Meaning.** `sigma_n^2 > 0` for every `n = 1, ..., N` (equivalently
+`abs(alpha_n) < 1` throughout). The map `r <-> alpha` is a genuine bijection
+at this order.
 
-## 1. Admissible interior point
+**Behavior.** `pacf(r)` and `from_pacf(alpha)` return the full vector
+unconditionally -- no exception, no warning.
 
-**Mathematical meaning.** `sigma_n^2 > 0` for every `n = 1, ..., N`
-(equivalently `abs(alpha_n) < 1` throughout). The map `r <-> alpha` is a
-genuine bijection at this order.
+## 2. Degenerate boundary sequences
 
-**Desired public behavior.** `pacf(r)` and `from_pacf(alpha)` return the full
-vector, unconditionally — no exception, no warning. This is already exactly
-today's behavior at interior points and does not change.
+**Meaning.** `sigma_m^2 = 0` at some order `m <= N` (equivalently
+`abs(alpha_m) = 1`), reached from a strictly positive-definite prefix
+(`sigma_n^2 > 0` for `n < m`). The Toeplitz matrix built from `r_1, ...,
+r_m` is positive semidefinite but singular. If further coefficients
+`r_{m+1}, ..., r_N` are supplied, they are not free: they are uniquely
+forced by the null vector of that singular matrix, and a valid admissible
+sequence must equal the forced continuation (see `SH_research_note.pdf` and
+the `extend_at_boundary` docstring for the derivation).
 
-**Required internal state.** The complete recursion trace
-(`alpha[1..N]`, `sigma2[0..N]`, predictor `phi` at each order).
+The consequence for the API: `alpha_1, ..., alpha_{m-1}`, together with the
+forced `alpha_m = +-1`, remain well defined, but there is no `r <-> alpha`
+bijection beyond order `m` -- `alpha_{m+1}, ..., alpha_N` simply do not
+exist as independent coordinates. Three distinct operations apply here:
 
-**Intended public API.** `pacf(r) -> alpha`, `from_pacf(alpha) -> r`.
+- **Coordinate transformation -- `pacf(r)`.** Raises `SingularToeplitzError`
+  the moment it hits this case. There is no mode parameter to suppress it;
+  raising is the only behavior.
+- **Boundary analysis -- `pacf_prefix(r)`.** Never raises on a
+  degenerate-but-admissible input. Returns a `PrefixResult` with the maximal
+  independent PACF prefix (`alpha`, its last entry exactly `+1` or `-1`),
+  the order `m` at which the boundary was reached, the innovation-variance
+  trace, and the terminal predictor `phi^{(m-1)}` needed to continue past
+  the boundary.
+- **Deterministic continuation -- `extend_at_boundary(r, n_extra)`.**
+  Appends the uniquely forced continuation past the boundary. Coefficients
+  already supplied past the boundary are validated against that forced
+  continuation rather than overwritten; an inconsistent value raises
+  `ValueError`. `admissible_bounds(r)` performs the same validation when
+  coefficients past the boundary are part of its input, and both functions
+  read the boundary state from the same recursion `pacf_prefix` uses,
+  rather than duplicating it.
 
-## 2. Mathematically degenerate boundary point
+## 3. Inadmissible sequences
 
-**Mathematical meaning.** `sigma_m^2 = 0` at some order `m <= N`
-(equivalently `abs(alpha_m) = 1`), reached from a strictly positive-definite
-prefix (`sigma_n^2 > 0` for `n < m`). The Toeplitz matrix `A_{m+1}` built
-from `r_1, ..., r_m` is positive *semi*definite but singular. This is an
-**admissible, not an error**, state — a legitimate correlation sequence that
-has simply run out of independent degrees of freedom. If further coefficients
-`r_{m+1}, ..., r_N` are supplied, they are not free: they are uniquely forced
-by the null vector of `A_{m+1}` (see `SH_research_note.pdf`, `extend_at_boundary`
-docstring), and a valid admissible sequence must equal that forced
-continuation.
+**Meaning.** `abs(alpha_n) > 1` for some `n` -- equivalently, a leading
+principal submatrix of the Toeplitz matrix has a negative eigenvalue. This
+is a plain input error: `r` does not correspond to any nonnegative power
+spectrum. It is unrelated to the boundary case above even though both are
+detected during the same recursion pass -- the boundary is `sigma_n^2 = 0`
+exactly; this is the recursion becoming mathematically impossible to
+continue at all.
 
-The key consequence for API design: `alpha_1, ..., alpha_{m-1}` (together
-with the forced `alpha_m = ±1`) remain well defined, but there is no
-`r <-> alpha` bijection beyond order `m` — `alpha_{m+1}, ..., alpha_N` simply
-do not exist as independent coordinates. `CLAUDE.md` names three distinct
-mathematical operations here; the current code already performs all three
-internally, just not as three separate entry points:
+**Behavior.** `pacf`, `pacf_prefix`, `from_pacf`, and `admissible_bounds`
+all raise `ValueError`, distinct from `SingularToeplitzError`.
+`check_admissibility(r)` returns `False` instead of raising, unless called
+with `raise_error=True`.
 
-| CLAUDE.md operation | Current implementation | Proposed public API |
-|---|---|---|
-| Coordinate transformation | `pacf(r)` default (`at_boundary='raise'`) | `pacf(r)` — unconditional, no `at_boundary` parameter |
-| Boundary analysis | `pacf(r, at_boundary='warn')` | new: `pacf_prefix(r)` |
-| Deterministic continuation | `extend_at_boundary(r, n_extra)` (`schurcorr/sh_bounds.py`) | unchanged: `extend_at_boundary(r, n_extra)` |
+## 4. Finite precision
 
-**Coordinate transformation — `pacf(r)`.** Should terminate with a clear
-exception when it hits this case, full stop. No mode parameter: the default
-*is* the only behavior. Raises `SingularToeplitzError`, as today's default
-already does.
+Not a distinct mathematical category, but a finite-precision artifact of
+the other three:
 
-**Boundary analysis — `pacf_prefix(r)` (new).** Never raises on a
-degenerate-but-admissible input. Returns the maximal independent PACF prefix
-together with the recursion state needed by a caller that wants to continue
-the sequence: the order `m` at which the boundary was reached, `alpha[1..m]`
-(the last entry is exactly `+1` or `-1`), the boundary innovation variance
-trace, and the terminal predictor `phi^{(m-1)}` (the quantity
-`extend_at_boundary` needs). Concretely, a small immutable result — a
-`@dataclass` or `NamedTuple`, matching the "small trace/result dataclass"
-`CLAUDE.md` explicitly permits in `levinson.py` — replacing today's
-`at_boundary='warn'` return value (which silently truncates the array and
-buries the boundary order in `len(alpha)`, or NaN-pads it for a 2-D batch).
-For 2-D batched input, this should report the per-row boundary order
-explicitly (e.g. as a field on the result) rather than encoding it through
-truncation length or NaN-padding.
+- `sigma_n^2` can compute as a small negative number (e.g. `-1e-15`) at a
+  point that is mathematically strictly interior (`sigma_n^2 > 0` exactly),
+  purely from float64 roundoff accumulated over the recursion.
+- At high order, or for correlations close to the boundary, float64 may be
+  unable to resolve whether a given `r` is exactly at the boundary,
+  strictly interior but very close to it, or (rarely) very slightly
+  inadmissible.
 
-*Naming.* `CLAUDE.md` offers `pacf_prefix(r)` and `analyze_correlations(r)`
-as examples. This note recommends **`pacf_prefix`**: it names the returned
-mathematical object directly (the maximal independent PACF prefix) and
-follows the existing `pacf`/`from_pacf` naming convention, whereas
-`analyze_correlations` reads more like a generic diagnostic entry point. This
-is the one open naming choice in this design and should be confirmed before
-Phase 2 implements it.
+The float64 path (`schurcorr/levinson.py`) absorbs this with a fixed
+tolerance, `_ROUNDING_TOL = 1e-12`: a computed `sigma_n^2` in
+`(-_ROUNDING_TOL, 0)` is clamped to exactly `0.0`, treated as case 2 rather
+than case 3. `schurcorr.bounds` uses a second, looser tolerance,
+`_BOUNDARY_CONTINUATION_TOL`, for comparing a *supplied* coefficient
+against its forced continuation -- an order-dependent chain of products
+that amplifies roundoff faster than the single-step comparisons
+`_ROUNDING_TOL` guards. See `DOCUMENTATION.md` ("Tolerances") for why the
+two are kept separate.
 
-**Deterministic continuation — `extend_at_boundary(r, n_extra)`.** Already
-matches the target shape described in `CLAUDE.md`: a separate, explicitly
-named function, not a mode of `pacf`. Its signature does not need to change.
-What should change internally (Phase 2, not this note) is that it currently
-constructs its own boundary state directly
-(`_LevinsonState.from_correlations(r, at_boundary="warn")`, in
-`sh_bounds.py:241`) instead of calling the new `pacf_prefix`; once
-`pacf_prefix` exists, `extend_at_boundary` and `admissible_bounds` (which
-does the same thing at `sh_bounds.py:115`) should both be rewritten to call
-it, so there is exactly one code path that reads "boundary reached" out of
-the recursion trace instead of three (`levinson.py:609`, `sh_bounds.py:115`,
-`sh_bounds.py:241`, all currently hard-coding `at_boundary="warn"`
-independently).
+The arbitrary-precision path (`schurcorr/precision.py`) lets a caller
+resolve this ambiguity directly by increasing the working precision
+(`recommended_dps`) rather than relying on a fixed tolerance.
 
-## 3. Inadmissible correlation sequence
+## Public API summary
 
-**Mathematical meaning.** `abs(alpha_n) > 1` for some `n` — equivalently, a
-leading principal submatrix of the Toeplitz matrix has a negative eigenvalue.
-This is a plain input error: `r` does not correspond to any nonnegative power
-spectrum. It is unrelated to the boundary case above (category 2) even
-though both are detected during the same recursion pass — category 2 is
-`sigma_n^2 = 0` exactly; this category is the recursion becoming
-mathematically impossible to continue at all.
-
-**Desired public behavior.** Unchanged from today: every entry point
-(`pacf`, `pacf_prefix`, `from_pacf`, `admissible_bounds`) raises `ValueError`
-distinct from `SingularToeplitzError`. `check_admissibility(r) -> bool`
-remains the boolean query that returns `False` instead of raising (with
-`raise_error=True` available for callers that want the exception).
-
-**Required internal state.** None beyond the point of failure — the
-recursion aborts at the first `n` with `abs(alpha_n) > 1 + tol`.
-
-**Intended public API.** No change.
-
-## 4. Numerical breakdown from finite precision
-
-**Mathematical meaning.** Not a distinct mathematical category — a *finite-precision
-artifact* of the other three. Two sub-cases occur in the current code:
-
-- `sigma_n^2` computed as a small negative number (e.g. `-1e-15`) at a point
-  that is mathematically strictly interior (`sigma_n^2 > 0` exactly), purely
-  from float64 roundoff accumulated over the recursion.
-- At high order or with correlations close to the boundary, float64 may be
-  unable to resolve whether a given `r` is exactly at the boundary, strictly
-  interior but extremely close to it, or (rarely) very slightly inadmissible
-  — the three categories above become numerically indistinguishable at
-  working precision.
-
-**Current handling.** The float64 path (`levinson.py`) uses a fixed
-tolerance `_TOL = 1e-12`: a computed `sigma_n^2 \in (-\_TOL, 0)` is clamped to
-exactly `0.0` with a `RuntimeWarning` (`levinson.py:291-298`, `:370-377`,
-`:861-868`), i.e. treated as category 2, not category 3. This is a
-deliberate, existing numerical-conditioning choice being *documented* here,
-not changed.
-
-**Gap identified, not fixed in this phase.** The `mpmath` arbitrary-precision
-path (`_levinson_mp.py`) exists precisely so a caller can resolve this
-ambiguity by increasing working precision (`recommended_dps`), but it
-currently detects the boundary purely via `sigma_sq[-1] <= 0` at whatever
-`dps` was requested, without distinguishing "boundary genuinely reached,"
-"boundary artifact of insufficient `dps`," and "input is actually
-inadmissible" — all three currently produce the same generic message
-referencing `dps` (see `_pacf_mp`, `_levinson_mp.py:162-181`). Recommendation:
-when `_levinson_mp.py` is promoted to `precision.py` (`CLAUDE.md` Phase 5),
-its error/warning messages should be tightened to name which of the three
-this is, since the whole point of the arbitrary-precision path is to let a
-caller tell them apart. Not required before Phase 2.
-
-**Required internal state.** The same recursion trace plus the active
-tolerance (`_TOL` for float64, working `dps` for mpmath).
-
-**Intended public API.** No new function. `pacf`/`pacf_prefix`/`from_pacf`
-keep clamping silently within `_TOL` for float64; `recommended_dps` remains
-the documented way to resolve ambiguity via the arbitrary-precision path.
-
-## Resulting signatures (as implemented)
-
-```python
-pacf(r) -> alpha                      # raises SingularToeplitzError at a degenerate boundary
-from_pacf(alpha) -> r
-pacf_prefix(r) -> PrefixResult        # boundary analysis
-extend_at_boundary(r, n_extra) -> r   # deterministic continuation, in schurcorr/bounds.py
-```
-
-`backend='mpmath'` / `dps=` were dropped from `pacf`/`from_pacf` entirely;
-the arbitrary-precision path is the standalone `pacf_mp` / `from_pacf_mp` in
-`schurcorr/precision.py`. The old `backend=`/`at_boundary=` implementation
-was kept alongside the new one during the migration for comparison and was
-removed once the comparison confirmed no meaningful numerical difference
-(CLAUDE.md Phase 6).
+| Function | Behavior at the boundary |
+| --- | --- |
+| `pacf(r)` | raises `SingularToeplitzError` |
+| `from_pacf(alpha)` | boundary unreachable by construction (`abs(alpha_n) < 1` required) |
+| `pacf_prefix(r)` | returns the maximal independent prefix, never raises for a degenerate-but-admissible `r` |
+| `extend_at_boundary(r, n_extra)` | appends the forced continuation |
+| `admissible_bounds(r)` | bounds collapse to the forced continuation past the boundary |
+| `check_admissibility(r)` | `True` for an admissible boundary sequence |
+| `pacf_mp(r, ...)` / `from_pacf_mp(alpha, ...)` | arbitrary-precision counterparts; see their docstrings for `at_boundary` |

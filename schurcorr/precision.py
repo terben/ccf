@@ -21,51 +21,32 @@ def recommended_dps(
     target_exponent: int = -13,
     safety_margin: int = 11,
 ) -> int:
-    """
-    Working precision (decimal places) recommended for size ``n_max``.
+    """Recommend a working precision for arbitrary-precision roundtrips.
 
     Parameters
     ----------
     n_max
-        Length ``N`` of the ``alpha`` (or ``r``) sequence the
-        recursion will be run on.
+        Sequence length.
     target_exponent
-        Desired roundtrip accuracy, expressed as
-        ``10^target_exponent``.
+        Target error scale as a power of ten.
     safety_margin
-        Extra decimal places added on top of the theoretical minimum,
-        to absorb trial-to-trial variance (the conditioning loss is a
-        random quantity, not a fixed number, for a given ``N``).
+        Additional decimal places.
 
     Returns
     -------
     int
-        Recommended value for ``mpmath``'s working precision in
-        decimal places (``dps``).
+        Recommended decimal precision.
 
     Raises
     ------
     ValueError
-        If ``n_max`` is not a positive integer, or ``safety_margin``
-        is negative.
+        If an argument is invalid.
 
     Notes
     -----
-    This is an empirical recommendation for roundtrip calculations, not
-    a mathematically guaranteed minimum precision. Empirically, the
-    recursion loses about ``0.45`` decimal digits of precision per lag
-    for ``alpha`` drawn from ``(-0.95, 0.95)`` (the wider of the two
-    bounds used in the paper's roundtrip figure), independent of the
-    working precision itself -- this is the conditioning loss described
-    in the module docstring, not a property of ``float64``
-    specifically. The formula below is a conservative, deliberately
-    simple affine fit to that empirical rate; it is calibrated for
-    ``b=0.95`` and therefore also safe (with some margin to spare) for
-    the narrower ``b=0.9`` case used alongside it in the same figure.
-
-    References
-    ----------
-    Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
+    This is an empirical recommendation for roundtrip calculations, not a
+    mathematically guaranteed minimum precision; see
+    ``docs/development_notes.md`` for the calibration.
     """
     if n_max < 1 or n_max != int(n_max):
         raise ValueError(f"n_max must be a positive integer; got {n_max!r}.")
@@ -75,6 +56,8 @@ def recommended_dps(
             f"safety_margin must be non-negative; got {safety_margin!r}."
         )
 
+    # 0.45 dps/lag: empirical conditioning loss for alpha in (-0.95, 0.95);
+    # see docs/development_notes.md.
     return math.ceil(0.45 * n_max) + abs(target_exponent) + safety_margin
 
 
@@ -84,71 +67,42 @@ def pacf_mp(
     dps: int | None = None,
     at_boundary: BoundaryModeMp = "raise",
 ) -> list[mp.mpf]:
-    """
-    Convert correlation coefficients to partial autocorrelations, at
-    arbitrary ``mpmath`` precision.
+    """Convert correlations to PACFs using arbitrary precision.
 
     Arbitrary-precision counterpart to :func:`schurcorr.levinson.pacf`.
 
     Parameters
     ----------
     r
-        Correlation coefficients ``r_1, ..., r_N``, as plain Python
-        floats (or anything ``mpmath.mpf`` accepts); promoted to
-        ``mpf`` at the working precision internally.
+        One-dimensional correlation sequence, as plain Python floats
+        (or anything ``mpmath.mpf`` accepts).
     dps
-        Working precision in decimal places, scoped via
-        ``mpmath.workdps`` (no side effect on the caller's global
-        ``mpmath.mp.dps``). If ``None``, ``recommended_dps(len(r))``
-        is used.
+        Working precision in decimal places. By default,
+        :func:`recommended_dps` is used.
     at_boundary
-        ``'raise'`` raises :class:`schurcorr.SingularToeplitzError`
-        when a residual variance ``<= 0`` is encountered at the
-        chosen working precision; ``'warn'`` emits a
-        ``RuntimeWarning`` and returns the non-degenerate part only.
-        ``'extend'`` is not supported for this backend (see
-        :func:`schurcorr.levinson.pacf`).
+        Boundary behavior, either ``"raise"`` or ``"warn"``. ``"warn"``
+        emits a ``RuntimeWarning`` and returns the non-degenerate
+        prefix only. See Notes.
 
     Returns
     -------
     list[mpmath.mpf]
-        Partial autocorrelations ``alpha_1, ..., alpha_N`` (or fewer,
-        under ``at_boundary='warn'``), as high-precision ``mpf``
-        values -- deliberately not downcast to ``float64``.
+        Partial autocorrelations, as high-precision ``mpf`` values --
+        not downcast to ``float64``.
 
     Raises
     ------
-    schurcorr.SingularToeplitzError
-        If ``at_boundary='raise'`` (the default) and a residual
-        variance ``<= 0`` is encountered, i.e. ``dps`` was not high
-        enough for the input sequence, or the boundary of the
-        admissible region was genuinely reached.
+    SingularToeplitzError
+        If the recursion reaches a degenerate boundary and
+        ``at_boundary="raise"``.
     ValueError
-        If ``at_boundary`` is not ``'raise'`` or ``'warn'`` (in
-        particular, ``'extend'`` is not supported at arbitrary
-        precision; use :func:`schurcorr.bounds.extend_at_boundary`,
-        which operates on ``r`` directly and has no ``mpmath`` variant).
+        If an argument is invalid.
 
     Notes
     -----
     Unlike the ``float64`` path (split into :func:`schurcorr.levinson.pacf`
     and :func:`schurcorr.levinson.pacf_prefix`), ``at_boundary`` stays a
-    mode parameter here: reaching the boundary at arbitrary precision
-    almost always means ``dps`` was insufficient rather than a genuine
-    boundary sequence, so the two cases this module actually needs to
-    distinguish are "raise" and "return the reliable prefix" -- a third,
-    boundary-aware entry point would add API surface without a
-    proportionate clarity gain for this comparatively rare path.
-
-    Complexity is ``O(N^2)`` recursion steps, as in the ``float64``
-    version, but each arithmetic operation costs more than a
-    ``float64`` operation, and that cost grows with ``dps`` (which in
-    turn grows with ``N`` via :func:`recommended_dps`), so wall-clock
-    time scales worse than ``O(N^2)`` in practice.
-
-    References
-    ----------
-    Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
+    mode parameter here; see ``docs/development_notes.md`` for why.
     """
     if at_boundary not in ("raise", "warn"):
         raise ValueError(
@@ -221,45 +175,29 @@ def from_pacf_mp(
     *,
     dps: int | None = None,
 ) -> list[mp.mpf]:
-    """
-    Reconstruct correlation coefficients from partial autocorrelations,
-    at arbitrary ``mpmath`` precision.
+    """Convert PACFs to correlations using arbitrary precision.
 
     Arbitrary-precision counterpart to :func:`schurcorr.levinson.from_pacf`.
 
     Parameters
     ----------
     alpha
-        Partial autocorrelations ``alpha_1, ..., alpha_N``, as plain
-        Python floats (or anything ``mpmath.mpf`` accepts); promoted
-        to ``mpf`` at the working precision internally.
+        One-dimensional PACF sequence with entries in ``(-1, 1)``, as
+        plain Python floats (or anything ``mpmath.mpf`` accepts).
     dps
-        Working precision in decimal places, scoped via
-        ``mpmath.workdps`` (no side effect on the caller's global
-        ``mpmath.mp.dps``). If ``None``, ``recommended_dps(len(alpha))``
-        is used.
+        Working precision in decimal places. By default,
+        :func:`recommended_dps` is used.
 
     Returns
     -------
     list[mpmath.mpf]
-        Correlation coefficients ``r_1, ..., r_N`` as high-precision
-        ``mpf`` values -- deliberately not downcast to ``float64``;
-        the caller decides when (and whether) to round.
+        Correlation coefficients, as high-precision ``mpf`` values --
+        not downcast to ``float64``.
 
     Raises
     ------
     ValueError
-        If ``alpha`` is not one-dimensional, or if any
-        ``abs(alpha_n) >= 1``.
-
-    Notes
-    -----
-    Complexity is ``O(N^2)`` recursion steps; see :func:`pacf_mp`
-    for the same remark on wall-clock scaling with ``dps``.
-
-    References
-    ----------
-    Schneider, P. and Hartlap, J. 2009, A&A 504, 705.
+        If the input is invalid.
     """
     from .levinson import _as_sequence_1d
 

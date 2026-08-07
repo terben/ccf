@@ -19,7 +19,6 @@ MIDDLE_TITLE = None
 FIGDIR = Path(__file__).resolve().parent / "../figs"
 FIGDIR.mkdir(exist_ok=True)
 
-SIGMA_COLOR = "#6a3d9a"
 BACKBONE_COLOR = "#c0392b"
 GUIDE_LOWER_COLOR = "#9ecae1"
 GUIDE_UPPER_COLOR = "#a1d99b"
@@ -176,7 +175,7 @@ def _figure_layout():
 
 
 def _plot_correlation_space(ax1):
-    """TOP LEFT: correlation space (curved r-space)."""
+    """Plot the admissible region in correlation coordinates."""
     alpha1_vals = [-0.7, -0.35, 0.0, 0.35, 0.7]
     r1_dense = np.linspace(-1.0, 1.0, 400)
     r2_lower_bnd = 2 * r1_dense**2 - 1
@@ -232,7 +231,7 @@ def _plot_correlation_space(ax1):
 
 
 def _plot_natural_coordinates(ax2, alpha1_vals):
-    """TOP RIGHT: natural coordinates (flat alpha-space)."""
+    """Plot the admissible region in natural (PACF) coordinates."""
     ax2.fill_between([-1, 1], [-1, -1], [1, 1], color=REGION_COLOR, zorder=0)
 
     for a2, col in [(-0.7, GUIDE_LOWER_COLOR), (0.7, GUIDE_UPPER_COLOR)]:
@@ -291,7 +290,7 @@ def _plot_legend(ax_leg):
 
 
 def _plot_order_three_slices(axes_bot):
-    """BOTTOM: three fixed-r1 slices of the order-3 admissible interval."""
+    """Plot three fixed-r1 slices of the order-3 admissible interval."""
     r1_values = [-0.5, 0.0, 0.5]
 
     for ax, r1 in zip(axes_bot, r1_values):

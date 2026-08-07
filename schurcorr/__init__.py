@@ -50,8 +50,9 @@ try:
     # Requires the "precision" extra (mpmath); the numpy-only core stays
     # importable without it.
     from .precision import from_pacf_mp, pacf_mp, recommended_dps
-except ImportError:
-    pass
+except ModuleNotFoundError as error:
+    if error.name != "mpmath":
+        raise
 else:
     __all__ += ["from_pacf_mp", "pacf_mp", "recommended_dps"]
 

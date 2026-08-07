@@ -1,21 +1,4 @@
-"""
-Characterization tests for CLAUDE.md Phase 1.
-
-These tests add two things that ``tests/test_schurcorr.py`` does not yet
-cover (see ``docs/boundary_semantics.md``, Phase 1b):
-
-- independent symbolic ground truth *at* the degenerate boundary, not just
-  at interior points (section A below), and
-- regression coverage at dimensions the published figures actually use
-  (section B below).
-
-Deliberately not added here: further tests of the ``at_boundary=``/
-``backend=`` mode-string combinatorics on ``pacf``/``from_pacf``.
-``docs/boundary_semantics.md`` recommends replacing both with dedicated
-functions, so ``tests/test_schurcorr.py``'s existing ~23 tests of that
-surface characterize an API scheduled for replacement, not a permanent
-contract to grow.
-"""
+"""Boundary characterization and figure-scale regression tests."""
 
 import numpy as np
 import pytest
@@ -36,23 +19,7 @@ from schurcorr import symbolic
 
 
 def _exponential_boundary_r(order: int, rho: float, sign: int) -> np.ndarray:
-    """
-    Build r_1, ..., r_order such that r_1, ..., r_{order-1} follow the
-    admissible exponential sequence rho**k and r_order sits on the symbolic
-    admissible boundary (alpha_order = sign), nudged a further ``sign *
-    1e-13`` past it.
-
-    The nudge is necessary because evaluating the symbolic boundary
-    expression in float64 lands on either side of the true boundary by a
-    few ULP, unpredictably: without it, ``abs(alpha_order)`` sometimes comes
-    out as e.g. ``0.999999999999998`` and the recursion's
-    ``abs(alpha_n) >= 1.0`` boundary check never fires. ``1e-13`` is chosen
-    to comfortably clear that float64 rounding noise while staying far
-    inside the recursion's own admissibility tolerance
-    (``schurcorr.levinson._TOL = 1e-12``), so the nudge reliably lands in
-    the "boundary, clamped to +-1" branch rather than the "inadmissible,
-    raises" branch.
-    """
+    """Construct an exponential prefix ending at a chosen symbolic boundary."""
     prefix = [rho**k for k in range(1, order)]
 
     r_lower_sym, r_upper_sym = symbolic.admissible_bounds_symbolic(order)
@@ -64,6 +31,10 @@ def _exponential_boundary_r(order: int, rho: float, sign: int) -> np.ndarray:
     else:
         r_last = float(boundary_expr)
 
+    # The nudge is larger than typical float64 evaluation noise but remains
+    # within the recursion's boundary-rounding tolerance, so it reliably
+    # lands in the "boundary, clamped to +-1" branch rather than the
+    # "inadmissible, raises" branch.
     r_last += sign * 1e-13
 
     return np.array(prefix + [r_last])
@@ -120,26 +91,17 @@ def test_boundary_sequence_is_admissible(order):
 #
 # Regression coverage at dimensions the published figures actually use.
 #
-# paper_plot_scripts/figure_roundtrip.py's docstring mentions a float64
-# complexity scan up to N=8192, but that panel ("Panel C") was explicitly
-# dropped from the script after investigation (see the module docstring,
-# "Panel C (O(N^2) timing) was dropped after investigation") -- N=8192 is
-# not a dimension the current figure exercises, so it is not tested here.
-#
-# More importantly, figure_roundtrip.py's own Panel A *measures* the float64
-# failure rate at BOUNDS = (0.9, 0.95) and treats a nonzero failure rate as
-# the expected, plotted result -- reproduced independently below: even a far
-# milder bound=0.5 fails about half the time by N=256, because the
-# innovation variance sigma_n^2 = prod(1 - alpha_i^2) shrinks geometrically
-# in N regardless of how small a fixed alpha bound is, and dividing by a
-# tiny sigma_n^2 amplifies float64 roundoff. So "pacf/from_pacf roundtrips
-# correctly at large N in backend='float64'" is not a claim this package or
-# paper makes -- asserting it here would characterize an assumption, not
-# paper-required behavior (CLAUDE.md Phase 1: "do not encode accidental
-# complexity as a permanent requirement"). The paper's actual claim at large
-# N (figure_roundtrip.py Panel B, its N=1024 "hero" point) is specifically
-# that backend='mpmath' with recommended_dps recovers a reliable roundtrip
-# where float64 would not -- that is what is tested below.
+# figure_roundtrip.py's own Panel A *measures* the float64 failure rate at
+# BOUNDS = (0.9, 0.95) and treats a nonzero failure rate as the expected,
+# plotted result: the innovation variance sigma_n^2 = prod(1 - alpha_i^2)
+# shrinks geometrically in N regardless of how small a fixed alpha bound
+# is, and dividing by a tiny sigma_n^2 amplifies float64 roundoff. So
+# "pacf/from_pacf roundtrips correctly at large N in float64" is not a
+# claim this package or paper makes, and is not tested here. The paper's
+# actual claim at large N (figure_roundtrip.py Panel B, its N=1024 "hero"
+# point) is that pacf_mp/from_pacf_mp with recommended_dps recovers a
+# reliable roundtrip where float64 would not -- that is what is tested
+# below.
 
 
 @pytest.mark.parametrize("bound", [0.9, 0.95])

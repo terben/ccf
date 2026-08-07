@@ -19,41 +19,15 @@ _ROUNDING_TOL = 1.0e-12
 
 
 class SingularToeplitzError(Exception):
-    """
-    Raised when the Levinson--Durbin recursion reaches a singular
-    Toeplitz matrix, ``sigma_n^2 = 0`` (see :func:`pacf`).
+    """Raised when the PACF recursion reaches a degenerate boundary.
 
-    At this point the angle between the two endpoint residuals that
-    defines ``alpha_n`` is undefined (one residual is the zero
-    vector), so the ``r <-> alpha`` bijection breaks down. This is
-    distinct from a :class:`ValueError` on malformed or inadmissible
-    input: it signals a boundary reached *during* an otherwise valid
-    recursion.
+    The sequence is admissible, but the ``r <-> alpha`` bijection ends
+    there; see ``docs/boundary_semantics.md``.
     """
 
 
 def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
-    """
-    Convert an array-like input to a contiguous one-dimensional float array.
-
-    Parameters
-    ----------
-    x
-        Input values.
-    name
-        Argument name used in error messages.
-
-    Returns
-    -------
-    numpy.ndarray
-        Contiguous one-dimensional array with double-precision floating
-        point entries.
-
-    Raises
-    ------
-    ValueError
-        If the input is not one-dimensional.
-    """
+    """Return input as a contiguous one-dimensional float64 array."""
     array = np.asarray(x, dtype=np.float64)
 
     if array.ndim != 1:
@@ -63,33 +37,9 @@ def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
 
 
 def _as_sequence_1d(x: ArrayLike, *, name: str) -> list:
-    """
-    Validate 1-D sequence input without forcing ``float64`` precision.
-
-    Used by :mod:`schurcorr.precision` for input that may already carry
-    ``mpmath.mpf`` values (e.g. the output of a prior
-    :func:`schurcorr.precision.from_pacf_mp` call): unlike
-    :func:`_asarray1d`, this does not round-trip through a
-    ``float64`` array, which would silently discard everything past
-    ``float64`` precision.
-
-    Parameters
-    ----------
-    x
-        Input values.
-    name
-        Argument name used in error messages.
-
-    Returns
-    -------
-    list
-        The input as a plain Python list, elements unchanged.
-
-    Raises
-    ------
-    ValueError
-        If the input is not one-dimensional.
-    """
+    """Validate one-dimensional input without converting its elements."""
+    # dtype=object avoids a float64 round-trip, which would silently
+    # discard precision beyond float64 (e.g. mpmath.mpf input elements).
     array = np.asarray(x, dtype=object)
 
     if array.ndim != 1:
@@ -99,27 +49,7 @@ def _as_sequence_1d(x: ArrayLike, *, name: str) -> list:
 
 
 def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
-    """
-    Convert array-like input to a contiguous float array of ndim 1 or 2.
-
-    Parameters
-    ----------
-    x
-        Input values, either a 1-D sequence ``(N,)`` or a 2-D batch
-        ``(n_samples, N)``.
-    name
-        Argument name used in error messages.
-
-    Returns
-    -------
-    numpy.ndarray
-        Contiguous array, unchanged in ndim (1 or 2).
-
-    Raises
-    ------
-    ValueError
-        If the input is neither one- nor two-dimensional.
-    """
+    """Return input as a contiguous one- or two-dimensional float64 array."""
     array = np.asarray(x, dtype=np.float64)
 
     if array.ndim not in (1, 2):
@@ -133,57 +63,27 @@ def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
 
 @dataclass(frozen=True, slots=True)
 class _LevinsonResult:
-    """
-    Terminal outcome of one forward Levinson--Durbin pass.
-
-    Every quantity here is ``O(N)``: unlike a full recursion trace (a
-    predictor array copied at every order, ``O(N^2)`` in total), nothing
-    that consumes this result -- :func:`pacf`, :func:`pacf_prefix`,
-    :func:`from_pacf`, or :mod:`schurcorr.bounds` -- needs more than the
-    terminal predictor plus the per-order scalars already produced along
-    the way.
-
-    Attributes
-    ----------
-    r
-        Correlation coefficients actually reached, ``(r_1, ..., r_m)``.
-    alpha
-        Partial autocorrelations ``(alpha_1, ..., alpha_m)``.
-    sigma2
-        Innovation variances ``(sigma_0^2, ..., sigma_m^2)``.
-    prediction
-        Linear predictions ``(p_1, ..., p_m)`` computed along the way
-        (``p_1 = 0``); used by :func:`schurcorr.bounds.admissible_bounds`
-        to report bounds at every order without recomputing them.
-    reached_boundary
-        Whether the recursion stopped at the singular boundary rather
-        than exhausting the input.
-    terminal_phi
-        Predictor coefficients at the final order reached, or ``None`` if
-        the boundary was not reached (only meaningful there, see
-        :func:`schurcorr.bounds.extend_at_boundary`).
-    """
+    """Terminal data returned by a scalar Levinson recursion."""
 
     r: FloatArray
     alpha: FloatArray
     sigma2: FloatArray
     prediction: FloatArray
     reached_boundary: bool
+    # Terminal predictor coefficients, only meaningful (non-None) once the
+    # boundary is reached; see schurcorr.bounds.extend_at_boundary.
     terminal_phi: FloatArray | None = None
 
 
 def _run_levinson_from_correlations(r: ArrayLike) -> _LevinsonResult:
-    """
-    Run the forward recursion ``r -> alpha``, without an ``at_boundary``
-    mode: it always proceeds as far as the mathematics allows and reports
-    how far it got via ``reached_boundary``, instead of raising or
-    warning on a degenerate-but-admissible input. Still raises
-    :class:`ValueError` for a genuinely inadmissible input
-    (``abs(alpha_n) > 1`` beyond numerical tolerance) -- unrelated to the
-    boundary (see docs/boundary_semantics.md).
+    """Run the canonical scalar correlation-to-PACF recursion.
 
-    The single canonical recursion shared by :func:`pacf`,
-    :func:`pacf_prefix`, and :mod:`schurcorr.bounds`.
+    Shared by :func:`pacf`, :func:`pacf_prefix`, and
+    :mod:`schurcorr.bounds`. Proceeds as far as the mathematics allows and
+    reports how far via ``reached_boundary`` rather than raising or
+    warning on a degenerate-but-admissible input; still raises
+    :class:`ValueError` for a genuinely inadmissible input (see
+    ``docs/boundary_semantics.md``).
     """
     r_array = _asarray1d(r, name="r")
     n_max = r_array.size
@@ -268,10 +168,11 @@ def _run_levinson_from_correlations(r: ArrayLike) -> _LevinsonResult:
 
 
 def _run_levinson_from_pacf(alpha: ArrayLike) -> _LevinsonResult:
-    """
-    Run the inverse recursion ``alpha -> r``. Cannot reach the singular
-    boundary by construction (``abs(alpha_n) < 1`` is validated up
-    front), so ``reached_boundary`` is always ``False``.
+    """Run the canonical scalar PACF-to-correlation recursion.
+
+    Cannot reach the singular boundary by construction (``abs(alpha_n) <
+    1`` is validated up front), so ``reached_boundary`` is always
+    ``False``.
     """
     alpha_array = _asarray1d(alpha, name="alpha")
 
@@ -346,24 +247,10 @@ def _run_levinson_from_pacf(alpha: ArrayLike) -> _LevinsonResult:
 
 
 def _pacf_2d_fast(r_array: FloatArray) -> FloatArray | None:
-    """
-    Vectorized fast path for :func:`pacf` over a 2-D batch.
+    """Run the PACF recursion vectorized across batch rows.
 
-    Runs the same recursion as :func:`_run_levinson_from_correlations`,
-    vectorized across the batch (sample) dimension instead of looping
-    over rows in Python. Returns ``None`` -- instead of partial or
-    incorrect output -- the moment any row would reach the singular
-    boundary or an inadmissible value; the caller then falls back to the
-    per-row scalar path (:func:`_pacf_1d_strict`) for the whole batch,
-    which unconditionally raises :class:`SingularToeplitzError` with the
-    offending sample index.
-
-    Not guaranteed bit-identical to the per-row scalar path: the
-    prediction ``sum(phi * r, axis=1)`` here uses a different
-    floating-point summation order than the scalar path's ``np.dot``,
-    which can differ by up to a few ULP. Both compute the same
-    recursion (see the module-level docstring); this is a
-    summation-order effect, not a different algorithm.
+    Not guaranteed bit-identical to the per-row scalar path; see
+    ``docs/development_notes.md``.
     """
     n_samples, n_max = r_array.shape
 
@@ -375,6 +262,9 @@ def _pacf_2d_fast(r_array: FloatArray) -> FloatArray | None:
         idx = n - 1
 
         if np.any(sigma2 <= _ROUNDING_TOL):
+            # Any row at or past the boundary: fall back to the per-row
+            # scalar path, which raises SingularToeplitzError with the
+            # offending sample index instead of partial/incorrect output.
             return None
 
         if n == 1:
@@ -404,20 +294,11 @@ def _pacf_2d_fast(r_array: FloatArray) -> FloatArray | None:
 
 
 def _from_pacf_2d(alpha_array: FloatArray) -> FloatArray:
-    """
-    Vectorized implementation of :func:`from_pacf` over a 2-D batch.
+    """Run the inverse recursion vectorized across batch rows.
 
-    Runs the same recursion as :func:`_run_levinson_from_pacf`,
-    vectorized across the batch (sample) dimension. Unlike
-    :func:`_pacf_2d_fast`, no fallback is needed: for any
-    ``abs(alpha_n) < 1`` (validated up front, for every row, exactly
-    as the scalar path does per row), the innovation variance
-    ``sigma2 * (1 - alpha_n**2)`` stays strictly positive by
-    construction, so the forward recursion can never reach the
-    singular boundary -- there is no boundary case to fall back on.
-
-    Not guaranteed bit-identical to the per-row scalar path; see the
-    Notes in :func:`_pacf_2d_fast` (same summation-order caveat).
+    Unlike :func:`_pacf_2d_fast`, no fallback is needed: ``abs(alpha_n) <
+    1`` (validated up front for every row) keeps the innovation variance
+    strictly positive by construction, so the boundary is unreachable.
     """
     n_samples, n_max = alpha_array.shape
 
