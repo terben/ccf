@@ -20,14 +20,17 @@ from .coordinates import (
     log_jacobian,
 )
 from .levinson import (
+    PACFStatus,
     PrefixResult,
     SingularToeplitzError,
     from_pacf,
     pacf,
     pacf_prefix,
+    pacf_status,
 )
 
 __all__ = [
+    "PACFStatus",
     "PrefixResult",
     "SingularToeplitzError",
     "admissible_bounds",
@@ -43,6 +46,7 @@ __all__ = [
     "log_jacobian",
     "pacf",
     "pacf_prefix",
+    "pacf_status",
     "sh_coordinates",
 ]
 

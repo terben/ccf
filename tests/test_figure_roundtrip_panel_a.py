@@ -21,43 +21,23 @@ if str(PAPER_PLOT_SCRIPTS) not in sys.path:
 import figure_roundtrip as fr  # noqa: E402
 
 
-def _scalar_failure_mask(r: np.ndarray) -> np.ndarray:
-    """Per-row failure mask via sc.pacf's own per-row exceptions."""
-    failed = np.zeros(r.shape[0], dtype=bool)
-    for i, row in enumerate(r):
-        try:
-            sc.pacf(row)
-        except (sc.SingularToeplitzError, ValueError):
-            failed[i] = True
-    return failed
-
-
-@pytest.mark.parametrize("bound,N", [(0.9, 32), (0.9, 64), (0.95, 64), (0.95, 96)])
-def test_batch_diagnostic_matches_scalar_pacf(bound, N):
-    rng = np.random.default_rng(0)
-    alpha = rng.uniform(-bound, bound, size=(200, N))
-    r = sc.from_pacf(alpha)
-
-    batch_mask = fr._roundtrip_failure_mask(r)
-    scalar_mask = _scalar_failure_mask(r)
-
-    np.testing.assert_array_equal(batch_mask, scalar_mask)
-
-
 @pytest.mark.parametrize("chunk_size", [1, 3, 11, 200])
 def test_chunk_size_does_not_change_failure_count(chunk_size):
     rng = np.random.default_rng(1)
     alpha = rng.uniform(-0.9, 0.9, size=(200, 64))
     r = sc.from_pacf(alpha)
 
-    full_mask = fr._roundtrip_failure_mask(r)
+    full_status = sc.pacf_status(r)
+    full_fails = int(np.count_nonzero(full_status.boundary | full_status.invalid))
 
     chunked_fails = 0
     for start in range(0, r.shape[0], chunk_size):
-        chunk = r[start : start + chunk_size]
-        chunked_fails += int(np.count_nonzero(fr._roundtrip_failure_mask(chunk)))
+        chunk_status = sc.pacf_status(r[start : start + chunk_size])
+        chunked_fails += int(
+            np.count_nonzero(chunk_status.boundary | chunk_status.invalid)
+        )
 
-    assert chunked_fails == int(np.count_nonzero(full_mask))
+    assert chunked_fails == full_fails
 
 
 def test_failure_rate_scan_matches_per_trial_reference_loop():

@@ -121,4 +121,5 @@ resolve this ambiguity directly by increasing the working precision
 | `extend_at_boundary(r, n_extra)` | appends the forced continuation |
 | `admissible_bounds(r)` | bounds collapse to the forced continuation past the boundary |
 | `check_admissibility(r)` | `True` for an admissible boundary sequence |
+| `pacf_status(r)` | reports interior / boundary / invalid per sequence without raising |
 | `pacf_mp(r, ...)` / `from_pacf_mp(alpha, ...)` | arbitrary-precision counterparts; see their docstrings for `at_boundary` |

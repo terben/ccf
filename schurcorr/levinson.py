@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from enum import IntEnum
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -438,6 +439,79 @@ def pacf(r: ArrayLike) -> FloatArray:
 
     alpha = batch.alpha.copy()
     return alpha[0] if was_1d else alpha
+
+
+class _PACFState(IntEnum):
+    """Per-row classification code underlying :class:`PACFStatus`."""
+
+    INTERIOR = 0
+    BOUNDARY = 1
+    INVALID = 2
+
+
+@dataclass(frozen=True, slots=True)
+class PACFStatus:
+    """Per-sequence status of the correlation-to-PACF recursion."""
+
+    _state: int | NDArray[np.intp]
+    order: int | NDArray[np.intp]
+
+    @property
+    def interior(self) -> bool | NDArray[np.bool_]:
+        return self._state == _PACFState.INTERIOR
+
+    @property
+    def boundary(self) -> bool | NDArray[np.bool_]:
+        return self._state == _PACFState.BOUNDARY
+
+    @property
+    def invalid(self) -> bool | NDArray[np.bool_]:
+        return self._state == _PACFState.INVALID
+
+
+def pacf_status(r: ArrayLike) -> PACFStatus:
+    """
+    Classify correlation sequences by the outcome of the correlation-to-PACF
+    recursion, without raising for a boundary or inadmissible sequence.
+
+    Parameters
+    ----------
+    r
+        Correlation coefficients with shape ``(N,)`` or ``(M, N)``.
+
+    Returns
+    -------
+    PACFStatus
+        Classification and terminal order: scalar fields for a 1-D input,
+        shape-``(M,)`` array fields for a 2-D batch.
+
+    Notes
+    -----
+    Exactly one of ``interior``, ``boundary``, ``invalid`` holds per
+    sequence. ``order`` is the 1-based Levinson order: ``N`` if
+    ``interior``, the order at which the boundary was reached if
+    ``boundary``, or the first order at which admissibility failed if
+    ``invalid`` -- matching :func:`pacf_prefix`'s ``order`` at the
+    boundary. See ``docs/boundary_semantics.md``.
+    """
+    r_array = _asarray_batchable(r, name="r")
+    was_1d = r_array.ndim == 1
+    r2d = r_array[None, :] if was_1d else r_array
+
+    batch = _levinson_correlations_batch(r2d)
+
+    state = np.where(
+        batch.invalid,
+        _PACFState.INVALID,
+        np.where(batch.reached_boundary, _PACFState.BOUNDARY, _PACFState.INTERIOR),
+    ).astype(np.intp)
+    # terminal_order is 0-based (n - 1) where invalid, but already the
+    # 1-based order itself for interior/boundary; see _levinson_correlations_batch.
+    order = np.where(batch.invalid, batch.terminal_order + 1, batch.terminal_order)
+
+    if was_1d:
+        return PACFStatus(_state=int(state[0]), order=int(order[0]))
+    return PACFStatus(_state=state, order=order.astype(np.intp))
 
 
 def from_pacf(alpha: ArrayLike) -> FloatArray:

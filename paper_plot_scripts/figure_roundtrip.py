@@ -45,13 +45,6 @@ BOUND_COLORS = {0.9: "tab:blue", 0.95: "tab:red"}
 # Panel A trial chunk size; see failure_rate_scan and docs/development_notes.md.
 TRIAL_BATCH_SIZE = 1_000
 
-# Mirrors schurcorr.levinson._ROUNDING_TOL (not imported -- see
-# _roundtrip_failure_mask below); tests/test_figure_roundtrip_panel_a.py
-# cross-checks this diagnostic against schurcorr.pacf's own exceptions,
-# so a future change to the library constant would surface as a test
-# failure here rather than as a silent mismatch.
-_ROUNDING_TOL = 1.0e-12
-
 # Publication sample sizes (--paper, the default).
 PAPER_FAILRATE_N_VALUES = (
     8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 88, 96, 112, 128,
@@ -85,79 +78,6 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _roundtrip_failure_mask(r: np.ndarray) -> np.ndarray:
-    """Per-row boolean mask: does the r -> alpha recursion fail for this row?
-
-    sc.pacf's batch mode is, by design, strict for library users: for a
-    batch with several problematic rows it raises for only the smallest
-    offending row index (see its docstring), not a mask over all rows.
-    That is the wrong shape of answer for this panel, which needs a
-    pass/fail count over thousands of trials per (bound, N), and no
-    public schurcorr function returns a per-row
-    interior/boundary/invalid classification for a 2-D batch (see
-    docs/development_notes.md for why, and for why a Python loop calling
-    a per-row function defeats the batching this exists for).
-
-    This therefore reimplements only the minimal r -> alpha arithmetic
-    needed to reproduce sc.pacf's own failure criterion for every row at
-    once -- not the alpha/sigma2/phi bookkeeping the library keeps for
-    its public return values. tests/test_figure_roundtrip_panel_a.py
-    cross-checks the resulting mask against sc.pacf's actual per-row
-    exceptions, so this is not an independent claim about the recursion.
-    """
-    n_samples, n_max = r.shape
-    phi = np.zeros((n_samples, n_max), dtype=np.float64)
-    sigma2 = np.ones(n_samples, dtype=np.float64)
-    active = np.ones(n_samples, dtype=bool)
-    failed = np.zeros(n_samples, dtype=bool)
-
-    for n in range(1, n_max + 1):
-        idx = n - 1
-        if not np.any(active):
-            break
-
-        # A row whose sigma2 already rounded to the boundary on the
-        # previous step fails here too, without a new alpha_n to check.
-        pre_boundary = active & (sigma2 <= _ROUNDING_TOL)
-        failed[pre_boundary] = True
-        active[pre_boundary] = False
-        computing = active
-
-        if n == 1:
-            pred = np.zeros(n_samples, dtype=np.float64)
-        else:
-            pred = np.sum(phi[:, :idx] * r[:, idx - 1 :: -1], axis=1)
-
-        sigma2_safe = np.where(computing, sigma2, 1.0)
-        alpha_n = (r[:, idx] - pred) / sigma2_safe
-        abs_alpha_n = np.abs(alpha_n)
-
-        invalid_now = computing & (abs_alpha_n > 1.0 + _ROUNDING_TOL)
-        boundary_now = computing & ~invalid_now & (abs_alpha_n >= 1.0)
-        continue_now = computing & ~(invalid_now | boundary_now)
-
-        failed[invalid_now | boundary_now] = True
-        active[invalid_now | boundary_now] = False
-
-        update_mask = continue_now | boundary_now
-        alpha_step = np.where(boundary_now, np.sign(alpha_n), alpha_n)
-
-        if n == 1:
-            phi[:, 0] = np.where(update_mask, alpha_step, phi[:, 0])
-        else:
-            phi_prev = phi[:, :idx].copy()
-            new_head = phi_prev - alpha_step[:, None] * phi_prev[:, ::-1]
-            phi[:, :idx] = np.where(update_mask[:, None], new_head, phi_prev)
-            phi[:, idx] = np.where(update_mask, alpha_step, phi[:, idx])
-
-        sigma2_next = sigma2 * (1.0 - alpha_step * alpha_step)
-        clamp = continue_now & (sigma2_next < 0.0) & (sigma2_next > -_ROUNDING_TOL)
-        sigma2_next = np.where(clamp, 0.0, sigma2_next)
-        sigma2 = np.where(update_mask, sigma2_next, sigma2)
-
-    return failed
-
-
 def failure_rate_scan(
     n_values: tuple[int, ...], trials: int, rng: np.random.Generator,
 ) -> dict[tuple[float, int], float]:
@@ -177,8 +97,9 @@ def failure_rate_scan(
                 m = min(TRIAL_BATCH_SIZE, trials - start)
                 alpha_batch = rng.uniform(-bound, bound, size=(m, N))
                 r_batch = sc.from_pacf(alpha_batch)
-                failed_mask = _roundtrip_failure_mask(r_batch)
-                fails += int(np.count_nonzero(failed_mask))
+                status = sc.pacf_status(r_batch)
+                failed = status.boundary | status.invalid
+                fails += int(np.count_nonzero(failed))
             results[(bound, N)] = fails / trials
     return results
 

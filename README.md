@@ -47,10 +47,10 @@ print(alpha_recovered)
 
 `pacf`, `from_pacf`, `pacf_prefix`, `admissible_bounds`, `fisher`, and
 `inverse_fisher` are the primary API. `check_admissibility`,
-`extend_at_boundary`, `innovation_variances`, `jacobian`/`log_jacobian`,
-`admissible_volume`/`log_admissible_volume`, and the arbitrary-precision
-functions form an extended API for boundary handling, diagnostics, and
-high-order or ill-conditioned sequences.
+`pacf_status`, `extend_at_boundary`, `innovation_variances`,
+`jacobian`/`log_jacobian`, `admissible_volume`/`log_admissible_volume`,
+and the arbitrary-precision functions form an extended API for boundary
+handling, diagnostics, and high-order or ill-conditioned sequences.
 
 For the boundary semantics (degenerate but admissible sequences vs.
 genuinely inadmissible ones), see `docs/boundary_semantics.md`. For the

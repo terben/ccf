@@ -49,6 +49,121 @@ def test_pacf_and_pacf_prefix_agree_at_interior_points():
     np.testing.assert_allclose(result.alpha, alpha, rtol=1e-12, atol=1e-12)
 
 
+# --- pacf_status ------------------------------------------------------------
+
+
+def test_pacf_status_interior_1d():
+    alpha = np.array([0.2, -0.3, 0.4])
+    r = sc.from_pacf(alpha)
+
+    status = sc.pacf_status(r)
+
+    assert status.interior is True
+    assert status.boundary is False
+    assert status.invalid is False
+    assert status.order == len(alpha)
+
+
+def test_pacf_status_boundary_1d():
+    r = np.array([1.0, 0.5, 0.3])
+
+    status = sc.pacf_status(r)
+
+    assert status.boundary is True
+    assert status.interior is False
+    assert status.invalid is False
+    assert status.order == sc.pacf_prefix(r).order
+
+
+def test_pacf_status_invalid_1d():
+    r = np.array([0.9, 0.95, 0.99])
+
+    status = sc.pacf_status(r)
+
+    assert status.invalid is True
+    assert status.interior is False
+    assert status.boundary is False
+    assert status.order == 3
+
+
+def test_pacf_status_does_not_raise_where_pacf_raises():
+    r_mixed = np.array([
+        [0.2, 0.1, 0.05],
+        [1.0, 0.5, 0.3],
+        [0.9, 0.95, 0.99],
+    ])
+
+    with pytest.raises(sc.SingularToeplitzError):
+        sc.pacf(r_mixed)
+
+    status = sc.pacf_status(r_mixed)
+    np.testing.assert_array_equal(status.interior, [True, False, False])
+    np.testing.assert_array_equal(status.boundary, [False, True, False])
+    np.testing.assert_array_equal(status.invalid, [False, False, True])
+
+
+def test_pacf_status_batch_mixed_classification():
+    interior_row = sc.from_pacf(np.array([0.2, -0.3, 0.4]))
+    boundary_row = np.array([1.0, 0.5, 0.3])
+    invalid_row = np.array([0.9, 0.95, 0.99])
+    r_batch = np.stack([interior_row, boundary_row, invalid_row])
+
+    status = sc.pacf_status(r_batch)
+
+    np.testing.assert_array_equal(status.interior, [True, False, False])
+    np.testing.assert_array_equal(status.boundary, [False, True, False])
+    np.testing.assert_array_equal(status.invalid, [False, False, True])
+    np.testing.assert_array_equal(status.order, [3, 1, 3])
+
+
+def test_pacf_status_categories_are_mutually_exclusive_and_exhaustive():
+    rng = np.random.default_rng(0)
+    alpha = rng.uniform(-0.95, 0.95, size=(50, 20))
+    r = sc.from_pacf(alpha)
+
+    status = sc.pacf_status(r)
+
+    membership_count = (
+        status.interior.astype(int)
+        + status.boundary.astype(int)
+        + status.invalid.astype(int)
+    )
+    np.testing.assert_array_equal(membership_count, np.ones_like(membership_count))
+
+
+def test_pacf_status_matches_pacf_per_row():
+    interior_row = sc.from_pacf(np.array([0.2, -0.3, 0.4]))
+    boundary_row = np.array([1.0, 0.5, 0.3])
+    invalid_row = np.array([0.9, 0.95, 0.99])
+    r_batch = np.stack([interior_row, boundary_row, invalid_row])
+
+    status = sc.pacf_status(r_batch)
+
+    for i, row in enumerate(r_batch):
+        if status.interior[i]:
+            sc.pacf(row)
+        elif status.boundary[i]:
+            with pytest.raises(sc.SingularToeplitzError):
+                sc.pacf(row)
+        else:
+            assert status.invalid[i]
+            with pytest.raises(ValueError):
+                sc.pacf(row)
+
+
+def test_pacf_status_order_matches_pacf_prefix_at_boundary():
+    r_mixed = np.array([
+        [0.2, 0.1, 0.05, 0.02],
+        [1.0, 1.0, 1.0, 1.0],
+        [0.3, -0.2, 0.1, 0.05],
+    ])
+
+    status = sc.pacf_status(r_mixed)
+
+    assert status.boundary[1]
+    assert status.order[1] == sc.pacf_prefix(r_mixed[1]).order
+
+
 def test_fisher_roundtrip():
     alpha = np.array([0.2, -0.3, 0.4])
 
