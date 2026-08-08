@@ -53,6 +53,41 @@ batch (row order takes priority over error type: a row that is merely at
 the boundary is reported before a later row that is outright inadmissible,
 matching the row-by-row loop this replaced).
 
+## `figure_roundtrip.py`: Panel A is batched, with a figure-local diagnostic
+
+Panel A calls `sc.from_pacf` and a small local `_roundtrip_failure_mask`
+helper on chunks of `TRIAL_BATCH_SIZE` trials at once, rather than
+`sc.from_pacf`/`sc.pacf` once per trial. The recursion is a Python loop
+over lags calling NumPy once per step; batching amortizes that per-call
+dispatch overhead across many trials instead of paying it per trial, the
+same reasoning as "one kernel per direction, 1-D as a batch of one"
+above.
+
+The reverse direction needed a figure-local helper rather than a direct
+`sc.pacf(r_batch)` call: `pacf`'s batch mode intentionally raises for
+only the smallest offending row in a batch (the right contract for
+library users), but Panel A needs a full per-row pass/fail mask over
+thousands of trials, and no public `schurcorr` function returns a
+per-row interior/boundary/invalid classification for a 2-D batch. A
+Python loop calling a per-row function (`pacf_prefix`, or `pacf` on
+single rows) to recover that mask would reintroduce the same per-trial
+dispatch overhead batching is meant to remove -- confirmed by measuring
+it once the failure rate approaches 100% at the largest `N` values,
+where such a loop degenerates to one call per row. The figure script's
+`_roundtrip_failure_mask` therefore reimplements the minimal `r ->
+alpha` arithmetic needed to reproduce `pacf`'s own failure criterion for
+every row at once; `tests/test_figure_roundtrip_panel_a.py` cross-checks
+it against `pacf`'s actual per-row exceptions so it cannot silently
+diverge from the library. A public batch diagnostic (e.g. a function
+returning `interior`/`boundary`/`invalid` per row) would remove the need
+for this local copy, but is a general API question outside the scope of
+this figure and was not added speculatively.
+
+`numpy.random.Generator.uniform(..., size=(m, N))` was confirmed to draw
+the exact same underlying sequence as `m` calls of `size=(N,)`,
+regardless of how the `m` trials are grouped into chunks, so batching
+does not change the Monte Carlo sample.
+
 ## `precision.py`: `recommended_dps` calibration
 
 Empirically, the recursion loses about 0.45 decimal digits of precision
