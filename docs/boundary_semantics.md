@@ -20,10 +20,10 @@ Four cases need to be told apart:
 4. finite-precision ambiguity between the above.
 
 All four are read off one quantity: the innovation-variance trace
-`sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the single scalar
-Levinson recursion shared by `pacf`, `pacf_prefix`, and `schurcorr.bounds`
-(`schurcorr.levinson._run_levinson_from_correlations`). The sections below
-are different readings of that one recursion's output, not different
+`sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the single Levinson
+recursion (`schurcorr.levinson._levinson_correlations_batch`) shared by
+`pacf`, `pacf_prefix`, and `schurcorr.bounds`. The sections below are
+different readings of that one recursion's output, not different
 algorithms.
 
 ## 1. Interior sequences

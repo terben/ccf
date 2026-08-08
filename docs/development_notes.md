@@ -33,17 +33,25 @@ stay far more benign in `float64` at the same `N`. The float64 failure
 rates shown are a worst-case characterization of the recursion, not a
 claim about typical astrophysical use.
 
-## `levinson.py`: batched vs. scalar path is not bit-identical
+## `levinson.py`: one kernel per direction, 1-D as a batch of one
 
-`_pacf_2d_fast` and `_from_pacf_2d` compute the same recursion as the
-per-row scalar path (`_run_levinson_from_correlations` /
-`_run_levinson_from_pacf`), vectorized across the batch dimension instead
-of looped in Python. The prediction step there, `sum(phi * r, axis=1)`,
-uses a different floating-point summation order than the scalar path's
-`np.dot`, which can differ by up to a few ULP. This is a summation-order
-effect, not a different algorithm, and is why batch-vs-loop tests in
-`tests/test_schurcorr.py` compare with a tolerance rather than exact
-equality.
+`_levinson_correlations_batch` (`r -> alpha`) and `_run_levinson_from_pacf`
+(`alpha -> r`) are the sole NumPy implementations of each recursion
+direction; a 1-D sequence is handled by reshaping to a batch of one row
+rather than by a separate scalar code path. Because a single row's
+`sum(phi * r, axis=1)` term does not depend on how many other rows are
+present in the batch, `pacf`/`from_pacf` on a batch are bit-identical to
+calling them row by row -- `tests/test_schurcorr.py`'s batch-vs-loop tests
+still compare with a tolerance mainly as a guard against future changes to
+the summation strategy, not because a difference is currently expected.
+
+`pacf_prefix` and `schurcorr.bounds` reach the same `r -> alpha` kernel
+through `_run_levinson_from_correlations`, a single-row adapter that raises
+immediately for an inadmissible sequence; `pacf` calls the batch kernel
+directly so it can report the smallest offending row across the whole
+batch (row order takes priority over error type: a row that is merely at
+the boundary is reported before a later row that is outright inadmissible,
+matching the row-by-row loop this replaced).
 
 ## `precision.py`: `recommended_dps` calibration
 

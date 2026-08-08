@@ -418,33 +418,30 @@ def test_pacf_invalid_ndim_raises_value_error():
         sc.pacf(np.zeros((2, 2, 2)))
 
 
-# --- Batch vectorization: fast path (interior batches) vs. fallback -------
+# --- Batch vectorization: shared kernel behavior --------------------------
 
 
-def test_pacf_2d_fast_path_used_for_interior_batch():
-    from schurcorr.levinson import _pacf_2d_fast
-
+def test_pacf_batch_size_one_matches_1d():
     rng = np.random.default_rng(11)
-    alpha = rng.uniform(-0.7, 0.7, size=(50, 10))
+    alpha = rng.uniform(-0.7, 0.7, size=10)
     r = sc.from_pacf(alpha)
 
-    assert _pacf_2d_fast(r) is not None
+    assert r.shape == (10,)
+    np.testing.assert_allclose(sc.pacf(r[None, :])[0], sc.pacf(r))
 
 
-def test_pacf_2d_fast_path_bails_on_boundary_row():
-    from schurcorr.levinson import _pacf_2d_fast
+def test_from_pacf_batch_size_one_matches_1d():
+    rng = np.random.default_rng(11)
+    alpha = rng.uniform(-0.7, 0.7, size=10)
 
-    r = np.array([
-        [0.2, 0.1, 0.05],
-        [1.0, 0.5, 0.3],
-    ])
-
-    assert _pacf_2d_fast(r) is None
+    np.testing.assert_allclose(
+        sc.from_pacf(alpha[None, :])[0], sc.from_pacf(alpha)
+    )
 
 
 def test_batched_pacf_and_from_pacf_large_scale_match_looped_1d():
-    # A larger, well-conditioned batch, comparing the vectorized fast
-    # path against the per-row scalar loop. Deliberately away from the
+    # A larger, well-conditioned batch, comparing the vectorized batch
+    # kernel against the per-row scalar loop. Deliberately away from the
     # numerically fragile bound~1 regime (see figure_roundtrip.py /
     # Panel A): near that regime, the recursion itself amplifies even
     # ULP-level perturbations, so batch-vs-loop agreement legitimately
@@ -462,14 +459,12 @@ def test_batched_pacf_and_from_pacf_large_scale_match_looped_1d():
     np.testing.assert_allclose(alpha_batch, alpha, rtol=1e-9, atol=1e-9)
 
 
-def test_batched_pacf_fallback_matches_per_row_semantics():
-    # A batch where one row hits the boundary must give exactly the
-    # same result as before the fast path was introduced, since it
-    # falls back to the untouched per-row scalar loop: pacf() raises
-    # with the offending sample index, and pacf_prefix()/
-    # extend_at_boundary() applied to that row directly still recover
-    # the boundary-inclusive prefix / forced continuation (pacf_prefix
-    # is 1-D only, so there is no batched equivalent to compare here).
+def test_batched_pacf_boundary_row_matches_per_row_semantics():
+    # A batch where one row hits the boundary: pacf() raises with the
+    # offending sample index, and pacf_prefix()/extend_at_boundary()
+    # applied to that row directly still recover the boundary-inclusive
+    # prefix / forced continuation (pacf_prefix is 1-D only, so there is
+    # no batched equivalent to compare here).
     r_mixed = np.array([
         [0.2, 0.1, 0.05, 0.02],
         [1.0, 1.0, 1.0, 1.0],
@@ -487,10 +482,45 @@ def test_batched_pacf_fallback_matches_per_row_semantics():
     assert np.all(r_ext == 1.0)
 
 
-def test_from_pacf_2d_never_needs_fallback_near_boundary():
-    # abs(alpha_n) < 1 strictly guarantees sigma2 stays positive, so
-    # the vectorized batch path for from_pacf has no boundary case to
-    # fall back on, even for alpha very close to +/-1.
+def test_batched_pacf_mixed_invalid_row_reports_sample_index():
+    r_mixed = np.array([
+        [0.2, 0.1, 0.05],
+        [0.9, 0.95, 0.99],
+        [0.3, -0.2, 0.1],
+    ])
+
+    with pytest.raises(ValueError, match="sample 1"):
+        sc.pacf(r_mixed)
+
+
+def test_batched_pacf_reports_smallest_index_among_multiple_bad_rows():
+    # A boundary row before an invalid row: the smallest row index wins,
+    # with that row's own error type, regardless of which order each
+    # row's problem occurs at internally.
+    r_mixed = np.array([
+        [0.2, 0.1, 0.05],
+        [1.0, 0.5, 0.3],
+        [0.9, 0.95, 0.99],
+    ])
+
+    with pytest.raises(sc.SingularToeplitzError, match="sample 1"):
+        sc.pacf(r_mixed)
+
+    # And the reverse ordering: invalid row before boundary row.
+    r_mixed_reordered = np.array([
+        [0.2, 0.1, 0.05],
+        [0.9, 0.95, 0.99],
+        [1.0, 0.5, 0.3],
+    ])
+
+    with pytest.raises(ValueError, match="sample 1"):
+        sc.pacf(r_mixed_reordered)
+
+
+def test_from_pacf_batch_never_reaches_boundary_near_alpha_extremes():
+    # abs(alpha_n) < 1 strictly guarantees sigma2 stays positive, so the
+    # batch kernel for from_pacf has no boundary case, even for alpha
+    # very close to +/-1.
     alpha = np.array([
         [0.999999, -0.5, 0.1],
         [-0.999999, 0.999999, -0.1],
