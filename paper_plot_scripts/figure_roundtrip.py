@@ -24,7 +24,11 @@ Writes: figs/fig_3_roundtrip.pdf, figs/fig_3_roundtrip.png
 from __future__ import annotations
 
 import argparse
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
+from itertools import repeat
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -33,6 +37,8 @@ import numpy as np
 
 import schurcorr as sc
 from style import aa_plot
+
+DEFAULT_JOBS = min(8, os.cpu_count() or 1)
 
 SEED = 20260714
 
@@ -75,7 +81,19 @@ def parse_args() -> argparse.Namespace:
         "--paper", action="store_true",
         help="publication sample counts (default)",
     )
-    return p.parse_args()
+    p.add_argument(
+        "-j", "--jobs", type=int, default=None,
+        help=(
+            "number of worker processes for Panel B arbitrary-precision "
+            f"trials (default: min(8, available CPUs) = {DEFAULT_JOBS}; "
+            "use 1 for serial execution; --quick defaults to 1 unless set "
+            "explicitly)"
+        ),
+    )
+    args = p.parse_args()
+    if args.jobs is not None and args.jobs < 1:
+        p.error("--jobs must be >= 1")
+    return args
 
 
 def failure_rate_scan(
@@ -113,27 +131,47 @@ def mp_roundtrip_error(alpha: np.ndarray, dps: int) -> float:
     return float(err)
 
 
+def _mp_roundtrip_error_chunk(alpha_chunk: np.ndarray, dps: int) -> np.ndarray:
+    """Compute mp_roundtrip_error for each row of a chunk (worker entry point)."""
+    return np.array([mp_roundtrip_error(alpha, dps) for alpha in alpha_chunk])
+
+
 def precision_scan(
     n_values: tuple[int, ...],
     trials_by_n: dict[int, int],
     hero_n: int,
     hero_trials: int,
     rng: np.random.Generator,
+    jobs: int = 1,
 ) -> dict[tuple[float, int], dict[str, float]]:
     """Panel B data: median / worst arbitrary-precision roundtrip error
-    for each (bound, N), including the hero point at `hero_n`."""
+    for each (bound, N), including the hero point at `hero_n`.
+
+    Trials are independent; for jobs > 1 they are computed in a
+    reused ProcessPoolExecutor. Random draws always happen in this
+    process first, so the Monte Carlo sample is identical regardless
+    of `jobs`.
+    """
     results = {}
-    for bound in BOUNDS:
-        for N in (*n_values, hero_n):
-            trials = trials_by_n.get(N, hero_trials)
-            dps = sc.recommended_dps(N)
-            errs = np.empty(trials)
-            for i in range(trials):
-                alpha = rng.uniform(-bound, bound, size=N)
-                errs[i] = mp_roundtrip_error(alpha, dps)
-            results[(bound, N)] = dict(
-                median=float(np.median(errs)), worst=float(np.max(errs))
-            )
+
+    with (ProcessPoolExecutor(max_workers=jobs) if jobs > 1 else nullcontext(None)) as pool:
+        for bound in BOUNDS:
+            for N in (*n_values, hero_n):
+                trials = trials_by_n.get(N, hero_trials)
+                dps = sc.recommended_dps(N)
+                alpha_samples = rng.uniform(-bound, bound, size=(trials, N))
+
+                if pool is None:
+                    errs = _mp_roundtrip_error_chunk(alpha_samples, dps)
+                else:
+                    n_chunks = min(trials, jobs * 4)
+                    chunks = np.array_split(alpha_samples, n_chunks)
+                    parts = pool.map(_mp_roundtrip_error_chunk, chunks, repeat(dps))
+                    errs = np.concatenate(list(parts))
+
+                results[(bound, N)] = dict(
+                    median=float(np.median(errs)), worst=float(np.max(errs))
+                )
     return results
 
 
@@ -211,16 +249,26 @@ def main() -> None:
     hero_n = QUICK_HERO_N if quick else PAPER_HERO_N
     hero_trials = QUICK_HERO_TRIALS if quick else PAPER_HERO_TRIALS
 
+    if args.jobs is not None:
+        jobs = args.jobs
+    elif quick:
+        jobs = 1
+    else:
+        jobs = DEFAULT_JOBS
+
     t0 = time.time()
     failrate = failure_rate_scan(failrate_n_values, failrate_trials, rng)
     t1 = time.time()
     print(f"Panel A (failure rate) done in {t1 - t0:.1f}s")
 
     precision = precision_scan(
-        precision_n_values, precision_trials, hero_n, hero_trials, rng
+        precision_n_values, precision_trials, hero_n, hero_trials, rng, jobs=jobs
     )
     t2 = time.time()
-    print(f"Panel B (mp precision, incl. N={hero_n} hero) done in {t2 - t1:.1f}s")
+    print(
+        f"Panel B (mp precision, incl. N={hero_n} hero, jobs={jobs}) "
+        f"done in {t2 - t1:.1f}s"
+    )
 
     make_figure(
         failrate, failrate_n_values,

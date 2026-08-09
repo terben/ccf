@@ -80,7 +80,10 @@ python paper_plot_scripts/figure_gaussianization.py --quick
 
 Drop `--quick` (or pass `--paper`) to reproduce the publication-quality
 figures at their full sample sizes; this is significantly slower. Output
-is written to `figs/`.
+is written to `figs/`. `figure_roundtrip.py`'s arbitrary-precision Panel B
+runs its independent trials across multiple processes; use `-j`/`--jobs`
+to control the worker count (e.g. `--paper -j 8`), or `-j 1` for serial
+execution.
 
 ## Optional dependencies
 

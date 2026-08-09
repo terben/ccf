@@ -76,6 +76,23 @@ the exact same underlying sequence as `m` calls of `size=(N,)`,
 regardless of how the `m` trials are grouped into chunks, so batching
 does not change the Monte Carlo sample.
 
+## `figure_roundtrip.py`: Panel B trials run in parallel processes
+
+Panel B's arbitrary-precision roundtrips (`sc.from_pacf_mp` /
+`sc.pacf_mp` via `mp_roundtrip_error`) are independent per trial, unlike
+Panel A they are not batchable through a vectorized NumPy kernel --
+`precision.py` works one `mpmath` value at a time -- so the available
+parallelism is across trials, not within one. `precision_scan` draws all
+`alpha` samples for a given `(bound, N)` in the parent process first
+(`rng.uniform(..., size=(trials, N))`), then hands fixed-size chunks of
+already-drawn samples to a reused `ProcessPoolExecutor`. Because the
+random draws never depend on the job count, `--jobs 1` (serial) and
+`--jobs N` (parallel) consume the exact same underlying RNG sequence and
+produce numerically identical median/worst statistics; this is checked
+directly in `tests/test_figure_roundtrip_panel_b.py`. `--quick` defaults
+to `--jobs 1` to avoid paying process-startup cost on a workload that is
+already fast; `--paper` defaults to `min(8, os.cpu_count())` workers.
+
 ## `precision.py`: `recommended_dps` calibration
 
 Empirically, the recursion loses about 0.45 decimal digits of precision
