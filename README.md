@@ -52,6 +52,15 @@ print(alpha_recovered)
 and the arbitrary-precision functions form an extended API for boundary
 handling, diagnostics, and high-order or ill-conditioned sequences.
 
+For a supplied prefix `r_1, ..., r_N`, `admissible_bounds(r)` returns
+bounds for each of them plus, as one extra trailing entry, the admissible
+interval for the next coefficient `r_(N+1)`:
+
+```python
+lower, upper = sc.admissible_bounds(r)
+next_lower, next_upper = lower[-1], upper[-1]
+```
+
 For the boundary semantics (degenerate but admissible sequences vs.
 genuinely inadmissible ones), see `docs/boundary_semantics.md`. For the
 exact index correspondence between the paper's notation and the code

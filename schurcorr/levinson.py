@@ -72,8 +72,9 @@ class _LevinsonResult:
     sigma2: FloatArray
     prediction: FloatArray
     reached_boundary: bool
-    # Terminal predictor coefficients, only meaningful (non-None) once the
-    # boundary is reached; see schurcorr.bounds.extend_at_boundary.
+    # Terminal predictor coefficients after the last successfully computed
+    # step (interior or boundary); used by schurcorr.bounds for the forced
+    # continuation and the next-coefficient admissible interval.
     terminal_phi: FloatArray | None = None
 
 
@@ -236,9 +237,7 @@ def _run_levinson_from_correlations(r: ArrayLike) -> _LevinsonResult:
         sigma2=batch.sigma2[0, : n + 1].copy(),
         prediction=batch.prediction[0, :n].copy(),
         reached_boundary=bool(batch.reached_boundary[0]),
-        terminal_phi=(
-            batch.phi[0, :n].copy() if batch.reached_boundary[0] else None
-        ),
+        terminal_phi=batch.phi[0, :n].copy(),
     )
 
 
@@ -370,7 +369,7 @@ def pacf_prefix(r: ArrayLike) -> PrefixResult:
         order=result.alpha.size,
         reached_boundary=result.reached_boundary,
         sigma2=result.sigma2,
-        predictor=result.terminal_phi,
+        predictor=result.terminal_phi if result.reached_boundary else None,
     )
 
 

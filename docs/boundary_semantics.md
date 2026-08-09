@@ -65,7 +65,9 @@ exist as independent coordinates. Three distinct operations apply here:
   already supplied past the boundary are validated against that forced
   continuation rather than overwritten; an inconsistent value raises
   `ValueError`. `admissible_bounds(r)` performs the same validation when
-  coefficients past the boundary are part of its input, and both functions
+  coefficients past the boundary are part of its input, and always appends
+  one further interval for the next, unsupplied coefficient, which also
+  collapses to the forced continuation past the boundary. Both functions
   read the boundary state from the same recursion `pacf_prefix` uses,
   rather than duplicating it.
 
@@ -119,7 +121,7 @@ resolve this ambiguity directly by increasing the working precision
 | `from_pacf(alpha)` | boundary unreachable by construction (`abs(alpha_n) < 1` required) |
 | `pacf_prefix(r)` | returns the maximal independent prefix, never raises for a degenerate-but-admissible `r` |
 | `extend_at_boundary(r, n_extra)` | appends the forced continuation |
-| `admissible_bounds(r)` | bounds collapse to the forced continuation past the boundary |
+| `admissible_bounds(r)` | returns bounds for `r` plus the next coefficient; collapse to the forced continuation past the boundary |
 | `check_admissibility(r)` | `True` for an admissible boundary sequence |
 | `pacf_status(r)` | reports interior / boundary / invalid per sequence without raising |
 | `pacf_mp(r, ...)` / `from_pacf_mp(alpha, ...)` | arbitrary-precision counterparts; see their docstrings for `at_boundary` |

@@ -48,9 +48,12 @@ def admissible_bounds(
     r: ArrayLike,
 ) -> tuple[FloatArray, FloatArray]:
     """
-    Compute successive admissible bounds for a correlation sequence.
+    Compute admissible bounds for a correlation sequence and its successor.
 
-    For every supplied coefficient ``r_n``, the bounds are implied by the
+    For a supplied prefix ``r_1, ..., r_N``, returns the admissible
+    interval for each of ``r_1, ..., r_N`` and, appended as one extra
+    entry, the admissible interval for the next coefficient ``r_(N+1)``.
+    For every supplied coefficient ``r_n``, its interval is implied by the
     preceding coefficients ``r_1, ..., r_(n-1)`` alone.
 
     Parameters
@@ -61,7 +64,9 @@ def admissible_bounds(
     Returns
     -------
     r_lower, r_upper
-        Lower and upper bounds for each supplied coefficient.
+        Arrays of length ``N + 1``. Entry ``n - 1`` gives the admissible
+        interval for ``r_n``; the final entry gives the interval for the
+        next coefficient ``r_(N+1)``.
 
     Raises
     ------
@@ -72,9 +77,10 @@ def admissible_bounds(
     -----
     At order ``n``, the interval is ``p_n -+ sigma_(n-1)^2``, centred on
     the linear prediction ``p_n``. At a degenerate boundary, subsequent
-    bounds collapse to the uniquely determined continuation (see
-    :func:`extend_at_boundary`); coefficients supplied past that point
-    are validated against it, not merely checked for presence.
+    bounds -- including the appended next-coefficient interval -- collapse
+    to the uniquely determined continuation (see :func:`extend_at_boundary`);
+    coefficients supplied past that point are validated against it, not
+    merely checked for presence.
     """
     r_array = _asarray1d(r, name="r")
     result = _run_levinson_from_correlations(r_array)
@@ -87,38 +93,46 @@ def admissible_bounds(
     r_lower = result.prediction - half_width
     r_upper = result.prediction + half_width
 
-    if not result.reached_boundary:
-        return r_lower, r_upper
-
     phi = result.terminal_phi
     window = list(result.r)
-    excess = r_array[number_computed:]
-    extra_bounds = np.empty(excess.size, dtype=np.float64)
 
-    for i, supplied_raw in enumerate(excess):
-        forced = _forced_continuation(phi, window)
-        supplied = float(supplied_raw)
+    if result.reached_boundary:
+        excess = r_array[number_computed:]
+        extra_bounds = np.empty(excess.size, dtype=np.float64)
 
-        if not np.isclose(
-            forced,
-            supplied,
-            rtol=_BOUNDARY_CONTINUATION_TOL,
-            atol=_BOUNDARY_CONTINUATION_TOL,
-        ):
-            raise ValueError(
-                f"r_{number_computed + i + 1} = {supplied!r} is "
-                "inconsistent with the Toeplitz-forced continuation "
-                f"r_{number_computed + i + 1} = {forced!r} past the "
-                f"singular boundary (order {number_computed + 1}); r "
-                "does not define an admissible correlation sequence."
-            )
+        for i, supplied_raw in enumerate(excess):
+            forced = _forced_continuation(phi, window)
+            supplied = float(supplied_raw)
 
-        extra_bounds[i] = supplied
-        window = window[1:] + [supplied]
+            if not np.isclose(
+                forced,
+                supplied,
+                rtol=_BOUNDARY_CONTINUATION_TOL,
+                atol=_BOUNDARY_CONTINUATION_TOL,
+            ):
+                raise ValueError(
+                    f"r_{number_computed + i + 1} = {supplied!r} is "
+                    "inconsistent with the Toeplitz-forced continuation "
+                    f"r_{number_computed + i + 1} = {forced!r} past the "
+                    f"singular boundary (order {number_computed + 1}); r "
+                    "does not define an admissible correlation sequence."
+                )
+
+            extra_bounds[i] = supplied
+            window = window[1:] + [supplied]
+
+        r_lower = np.concatenate([r_lower, extra_bounds])
+        r_upper = np.concatenate([r_upper, extra_bounds])
+
+    # Next-coefficient interval, from the same terminal predictor/window
+    # used above for the boundary continuation (or, in the interior case,
+    # the linear prediction p_(N+1) -+ sigma_N^2).
+    next_center = _forced_continuation(phi, window)
+    next_half_width = float(result.sigma2[number_computed])
 
     return (
-        np.concatenate([r_lower, extra_bounds]),
-        np.concatenate([r_upper, extra_bounds]),
+        np.concatenate([r_lower, [next_center - next_half_width]]),
+        np.concatenate([r_upper, [next_center + next_half_width]]),
     )
 
 
@@ -275,6 +289,9 @@ def check_admissibility(
     try:
         r_array = _asarray1d(r, name="r")
         r_lower, r_upper = admissible_bounds(r_array)
+        # admissible_bounds appends one extra entry for the next, unsupplied
+        # coefficient; only the first len(r_array) entries apply to r itself.
+        r_lower, r_upper = r_lower[: r_array.size], r_upper[: r_array.size]
 
         admissible = bool(
             np.all(r_array >= r_lower - atol)

@@ -667,8 +667,101 @@ def test_admissible_bounds_contain_input():
 
     r_lower, r_upper = sc.admissible_bounds(r)
 
-    assert np.all(r >= r_lower)
-    assert np.all(r <= r_upper)
+    assert r_lower.shape == (r.size + 1,)
+    assert r_upper.shape == (r.size + 1,)
+    assert np.all(r >= r_lower[:-1])
+    assert np.all(r <= r_upper[:-1])
+
+
+def test_admissible_bounds_first_interval_is_exactly_pm1():
+    for r in (np.array([0.3]), np.array([0.1, 0.2, 0.3])):
+        r_lower, r_upper = sc.admissible_bounds(r)
+
+        assert r_lower[0] == -1.0
+        assert r_upper[0] == 1.0
+
+
+def test_admissible_bounds_empty_input():
+    r_lower, r_upper = sc.admissible_bounds(np.array([]))
+
+    np.testing.assert_allclose(r_lower, [-1.0])
+    np.testing.assert_allclose(r_upper, [1.0])
+
+
+def test_admissible_bounds_next_interval_has_positive_width_interior():
+    r = np.array([0.1, 0.2, 0.3])
+
+    r_lower, r_upper = sc.admissible_bounds(r)
+
+    assert r_lower.shape == (4,)
+    assert r_upper.shape == (4,)
+    assert r_lower[-1] < r_upper[-1]
+
+
+def test_admissible_bounds_next_interval_midpoint_gives_alpha_next_zero():
+    r = np.array([0.1, 0.2, 0.3, 0.9])
+
+    r_lower, r_upper = sc.admissible_bounds(r)
+    mid = 0.5 * (r_lower[-1] + r_upper[-1])
+
+    alpha_mid = sc.pacf(np.append(r, mid))
+
+    assert alpha_mid[-1] == pytest.approx(0.0, abs=1e-8)
+
+
+def test_admissible_bounds_next_interval_affine_alpha_next():
+    r = np.array([0.1, 0.2, 0.3, 0.9])
+    a = 0.37
+
+    r_lower, r_upper = sc.admissible_bounds(r)
+    mid = 0.5 * (r_lower[-1] + r_upper[-1])
+    half_width = 0.5 * (r_upper[-1] - r_lower[-1])
+    next_r = mid + a * half_width
+
+    alpha_ext = sc.pacf(np.append(r, next_r))
+
+    assert alpha_ext[-1] == pytest.approx(a, abs=1e-8)
+
+
+def test_admissible_bounds_next_interval_user_case():
+    r = np.array([0.1, 0.2, 0.3, 0.9])
+
+    r_lower, r_upper = sc.admissible_bounds(r)
+
+    assert r_lower[-1] < r_upper[-1]
+
+    r_next_ok = 0.5 * (r_lower[-1] + r_upper[-1])
+    sc.pacf(np.append(r, r_next_ok))
+
+    r_next_bad = r_upper[-1] + 0.5
+    with pytest.raises(ValueError):
+        sc.pacf(np.append(r, r_next_bad))
+
+
+def test_admissible_bounds_next_interval_collapses_at_boundary():
+    r = np.array([1.0])
+
+    r_lower, r_upper = sc.admissible_bounds(r)
+    extended = sc.extend_at_boundary(r, n_extra=1)
+
+    assert r_lower.shape == (2,)
+    assert r_upper.shape == (2,)
+    assert r_lower[-1] == r_upper[-1]
+    assert r_lower[-1] == pytest.approx(extended[-1])
+    assert r_upper[-1] == pytest.approx(extended[-1])
+
+
+def test_admissible_bounds_next_interval_collapses_with_supplied_continuation():
+    r = sc.extend_at_boundary(np.array([1.0]), n_extra=3)
+
+    r_lower, r_upper = sc.admissible_bounds(r)
+
+    assert r_lower.shape == (r.size + 1,)
+    assert r_upper.shape == (r.size + 1,)
+    assert r_lower[-1] == r_upper[-1]
+
+    extended = sc.extend_at_boundary(r, n_extra=r.size + 1)
+    assert r_lower[-1] == pytest.approx(extended[-1])
 
 
 def test_sh_coordinates_equal_pacf():
@@ -696,8 +789,10 @@ def test_check_admissibility_false():
 def test_admissible_bounds_boundary_consistent_tail_collapses_to_point():
     r_lower, r_upper = sc.admissible_bounds(np.array([1.0, 1.0]))
 
-    np.testing.assert_allclose(r_lower, [-1.0, 1.0])
-    np.testing.assert_allclose(r_upper, [1.0, 1.0])
+    # The third entry is the admissible interval for the next, unsupplied
+    # coefficient r_3, which also collapses to the forced continuation.
+    np.testing.assert_allclose(r_lower, [-1.0, 1.0, 1.0])
+    np.testing.assert_allclose(r_upper, [1.0, 1.0, 1.0])
 
 
 def test_admissible_bounds_boundary_inconsistent_tail_raises():
