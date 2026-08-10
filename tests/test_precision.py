@@ -67,3 +67,15 @@ def test_recommended_dps_rejects_invalid_n_max():
 def test_recommended_dps_rejects_negative_safety_margin():
     with pytest.raises(ValueError):
         sc.recommended_dps(10, safety_margin=-1)
+
+
+@pytest.mark.parametrize("bad", [mp.nan, mp.inf, -mp.inf, float("nan"), float("inf")])
+def test_pacf_mp_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.pacf_mp([0.2, bad])
+
+
+@pytest.mark.parametrize("bad", [mp.nan, mp.inf, -mp.inf, float("nan"), float("inf")])
+def test_from_pacf_mp_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.from_pacf_mp([0.2, bad])

@@ -114,7 +114,7 @@ def admissible_bounds(
                     f"r_{number_computed + i + 1} = {supplied!r} is "
                     "inconsistent with the Toeplitz-forced continuation "
                     f"r_{number_computed + i + 1} = {forced!r} past the "
-                    f"singular boundary (order {number_computed + 1}); r "
+                    f"singular boundary (order {number_computed}); r "
                     "does not define an admissible correlation sequence."
                 )
 
@@ -144,12 +144,15 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     ----------
     r
         Admissible sequence ending at a degenerate boundary
-        (``sigma_(m-1)^2 = 0`` for some order ``m``). Entries already
+        (``sigma_m^2 = 0`` for some order ``m``). Entries already
         supplied past the boundary are validated against the forced
         continuation rather than overwritten.
     n_extra
-        Number of coefficients to append. Must be at least the number
-        of entries ``r`` already supplies past the boundary.
+        Total number of coefficients after the boundary to include in the
+        returned sequence. Coefficients already supplied beyond the
+        boundary count toward this number and are validated against the
+        forced continuation; must be at least the number of such entries
+        ``r`` already supplies.
 
     Returns
     -------
@@ -193,7 +196,7 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     if existing_excess.size > n_extra:
         raise ValueError(
             f"r already contains {existing_excess.size} entries past "
-            f"the boundary (order {prefix_len + 1}), but "
+            f"the boundary (order {prefix_len}), but "
             f"n_extra={n_extra} was requested; pass n_extra >= "
             f"{existing_excess.size}, or pass only the admissible "
             "prefix of r."

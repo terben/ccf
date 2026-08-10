@@ -34,6 +34,9 @@ def _asarray1d(x: ArrayLike, *, name: str) -> FloatArray:
     if array.ndim != 1:
         raise ValueError(f"{name} must be a one-dimensional array.")
 
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must contain only finite values.")
+
     return np.ascontiguousarray(array)
 
 
@@ -58,6 +61,9 @@ def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
             f"{name} must be a 1-D array (N,) or a 2-D batch "
             f"(n_samples, N); got ndim={array.ndim}."
         )
+
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must contain only finite values.")
 
     return np.ascontiguousarray(array)
 
@@ -359,7 +365,12 @@ def pacf_prefix(r: ArrayLike) -> PrefixResult:
     Raises
     ------
     ValueError
-        If ``r`` is not admissible.
+        If inadmissibility (``abs(alpha_n) > 1``) is encountered before a
+        boundary is reached. Coefficients supplied past a reached boundary
+        are outside the independent PACF prefix and are not validated by
+        this function; use :func:`schurcorr.bounds.check_admissibility` or
+        :func:`schurcorr.bounds.admissible_bounds` to validate the complete
+        supplied sequence.
     """
     r_array = _asarray1d(r, name="r")
     result = _run_levinson_from_correlations(r_array)
@@ -492,6 +503,13 @@ def pacf_status(r: ArrayLike) -> PACFStatus:
     ``boundary``, or the first order at which admissibility failed if
     ``invalid`` -- matching :func:`pacf_prefix`'s ``order`` at the
     boundary. See ``docs/boundary_semantics.md``.
+
+    For a sequence that reaches a degenerate boundary, the classification
+    describes the recursion up to that first boundary. Coefficients
+    supplied beyond the boundary are not validated by ``pacf_status``; use
+    :func:`schurcorr.bounds.check_admissibility` or
+    :func:`schurcorr.bounds.admissible_bounds` when the admissibility of
+    the complete supplied sequence is required.
     """
     r_array = _asarray_batchable(r, name="r")
     was_1d = r_array.ndim == 1

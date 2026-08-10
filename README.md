@@ -64,7 +64,10 @@ next_lower, next_upper = lower[-1], upper[-1]
 For the boundary semantics (degenerate but admissible sequences vs.
 genuinely inadmissible ones), see `docs/boundary_semantics.md`. For the
 exact index correspondence between the paper's notation and the code
-(e.g. `sigma2`), see `docs/notation.md`.
+(e.g. `sigma2`), see `docs/notation.md`. `pacf_status` reports where the
+independent recursion terminates; use `check_admissibility` or
+`admissible_bounds` to validate coefficients already supplied beyond a
+degenerate boundary.
 
 ## Reference implementation
 

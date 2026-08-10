@@ -114,6 +114,9 @@ def pacf_mp(
 
     r = _as_sequence_1d(r, name="r")
 
+    if not all(mp.isfinite(x) for x in r):
+        raise ValueError("r must contain only finite values.")
+
     n_max = len(r)
     if dps is None:
         dps = recommended_dps(n_max)
@@ -202,6 +205,9 @@ def from_pacf_mp(
     from .levinson import _as_sequence_1d
 
     alpha = _as_sequence_1d(alpha, name="alpha")
+
+    if not all(mp.isfinite(x) for x in alpha):
+        raise ValueError("alpha must contain only finite values.")
 
     n_max = len(alpha)
     if dps is None:

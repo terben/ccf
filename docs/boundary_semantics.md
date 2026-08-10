@@ -22,9 +22,38 @@ Four cases need to be told apart:
 All four are read off one quantity: the innovation-variance trace
 `sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the single Levinson
 recursion (`schurcorr.levinson._levinson_correlations_batch`) shared by
-`pacf`, `pacf_prefix`, and `schurcorr.bounds`. The sections below are
-different readings of that one recursion's output, not different
+`pacf`, `pacf_status`, `pacf_prefix`, and `schurcorr.bounds`. The sections
+below are different readings of that one recursion's output, not different
 algorithms.
+
+That recursion always stops at the first terminal event -- a reached
+boundary or an inadmissibility -- and never inspects coefficients supplied
+beyond it. This gives the API three layers, from cheapest to most
+complete:
+
+- `pacf_status` / `pacf_prefix` describe the recursion up to its first
+  terminal event only.
+- `pacf` is the strict `r <-> alpha` coordinate transformation: boundary or
+  invalid both raise.
+- `check_admissibility` / `admissible_bounds` validate the complete
+  supplied `r`, including any continuation supplied past a reached
+  boundary.
+
+Consequently, whether a `ValueError` on a bad supplied tail comes from the
+independent recursion or from tail validation depends on where the problem
+sits:
+
+- **Inadmissibility encountered before a boundary** (`abs(alpha_n) > 1` for
+  some `n`, reached without ever hitting `sigma_n^2 = 0`): `pacf`,
+  `pacf_prefix`, and `admissible_bounds` all raise `ValueError`, and
+  `pacf_status` reports `invalid`.
+- **Inconsistent continuation supplied after a boundary already reached**:
+  the independent recursion has already stopped at a valid boundary, so
+  `pacf_status` reports `boundary` and `pacf_prefix` returns the
+  boundary-inclusive independent prefix regardless of what follows in `r`.
+  `check_admissibility`, `admissible_bounds`, and `extend_at_boundary`
+  instead inspect that supplied tail and raise/report failure if it is
+  inconsistent with the forced continuation.
 
 ## 1. Interior sequences
 
@@ -58,7 +87,7 @@ exist as independent coordinates. Three distinct operations apply here:
   degenerate-but-admissible input. Returns a `PrefixResult` with the maximal
   independent PACF prefix (`alpha`, its last entry exactly `+1` or `-1`),
   the order `m` at which the boundary was reached, the innovation-variance
-  trace, and the terminal predictor `phi^{(m-1)}` needed to continue past
+  trace, and the terminal predictor `phi^{(m)}` needed to continue past
   the boundary.
 - **Deterministic continuation -- `extend_at_boundary(r, n_extra)`.**
   Appends the uniquely forced continuation past the boundary. Coefficients
@@ -119,9 +148,9 @@ resolve this ambiguity directly by increasing the working precision
 | --- | --- |
 | `pacf(r)` | raises `SingularToeplitzError` |
 | `from_pacf(alpha)` | boundary unreachable by construction (`abs(alpha_n) < 1` required) |
-| `pacf_prefix(r)` | returns the maximal independent prefix, never raises for a degenerate-but-admissible `r` |
+| `pacf_prefix(r)` | returns the maximal independent prefix, reached through the first boundary; never raises for a degenerate-but-admissible `r`, and does not validate coefficients supplied beyond a reached boundary |
 | `extend_at_boundary(r, n_extra)` | appends the forced continuation |
 | `admissible_bounds(r)` | returns bounds for `r` plus the next coefficient; collapse to the forced continuation past the boundary |
 | `check_admissibility(r)` | `True` for an admissible boundary sequence |
-| `pacf_status(r)` | reports interior / boundary / invalid per sequence without raising |
+| `pacf_status(r)` | reports the recursion state up to the first boundary/invalid order; does not validate coefficients supplied beyond a reached boundary |
 | `pacf_mp(r, ...)` / `from_pacf_mp(alpha, ...)` | arbitrary-precision counterparts; see their docstrings for `at_boundary` |

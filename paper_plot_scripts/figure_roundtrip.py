@@ -103,8 +103,8 @@ def failure_rate_scan(
     draws, for each (bound, N).
 
     Trials are processed in chunks because schurcorr's NumPy recursion is
-    vectorized across samples; calling sc.from_pacf/sc.pacf once per
-    trial would spend most of the runtime in per-call Python/NumPy
+    vectorized across samples; calling the NumPy Levinson recursions once
+    per trial would spend most of the runtime in per-call Python/NumPy
     dispatch overhead rather than the O(N) arithmetic itself.
     """
     results = {}

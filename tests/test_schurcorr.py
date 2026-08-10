@@ -877,3 +877,165 @@ def test_symbolic_sh_coordinate_equals_pacf(order):
     assert verify_x_equals_alpha(order) == 0
 
 
+# --- non-finite inputs -------------------------------------------------------
+
+
+_NON_FINITE = [np.nan, np.inf, -np.inf]
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_pacf_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.pacf(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_pacf_status_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.pacf_status(np.array([bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_pacf_prefix_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.pacf_prefix(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_from_pacf_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.from_pacf(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_admissible_bounds_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.admissible_bounds(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_extend_at_boundary_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.extend_at_boundary(np.array([1.0, bad]), n_extra=1)
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_check_admissibility_treats_non_finite_as_inadmissible(bad):
+    # check_admissibility() catches ValueError internally and reports
+    # False rather than propagating it; raise_error=True still surfaces a
+    # ValueError, just its own generic message, not the finite-value one.
+    assert not sc.check_admissibility(np.array([0.2, bad]))
+
+    with pytest.raises(ValueError):
+        sc.check_admissibility(np.array([0.2, bad]), raise_error=True)
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_fisher_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.fisher(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_inverse_fisher_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.inverse_fisher(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_innovation_variances_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.innovation_variances(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_jacobian_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.jacobian(np.array([0.2, bad]))
+
+
+@pytest.mark.parametrize("bad", _NON_FINITE)
+def test_log_jacobian_rejects_non_finite(bad):
+    with pytest.raises(ValueError, match="finite"):
+        sc.log_jacobian(np.array([0.2, bad]))
+
+
+def test_pacf_status_batch_one_bad_row_fails_immediately_not_interior():
+    r = np.array([
+        [0.2, 0.1],
+        [0.2, np.nan],
+    ])
+
+    with pytest.raises(ValueError, match="finite"):
+        sc.pacf_status(r)
+
+
+def test_pacf_batch_one_bad_row_fails_immediately():
+    r = np.array([
+        [0.2, 0.1],
+        [0.2, np.nan],
+    ])
+
+    with pytest.raises(ValueError, match="finite"):
+        sc.pacf(r)
+
+
+def test_admissible_bounds_empty_input_still_allowed():
+    # The finite check must accept empty arrays (np.all(np.isfinite([]))
+    # is vacuously True); this preserves the existing empty-input contract.
+    r_lower, r_upper = sc.admissible_bounds(np.array([]))
+
+    np.testing.assert_allclose(r_lower, [-1.0])
+    np.testing.assert_allclose(r_upper, [1.0])
+
+
+# --- whole-sequence boundary semantics ---------------------------------------
+
+
+def test_boundary_tail_inconsistent_freezes_status_prefix_and_admissibility():
+    r = np.array([1.0, 0.5])
+
+    status = sc.pacf_status(r)
+    assert status.boundary
+    assert status.order == 1
+    assert not sc.check_admissibility(r)
+
+    prefix = sc.pacf_prefix(r)
+    assert prefix.reached_boundary
+    assert prefix.order == 1
+
+    with pytest.raises(ValueError, match="inconsistent"):
+        sc.admissible_bounds(r)
+
+
+def test_boundary_tail_consistent_status_reports_first_boundary_only():
+    r = np.array([1.0, 1.0, 1.0])
+
+    status = sc.pacf_status(r)
+    assert status.boundary
+    assert status.order == 1
+    assert sc.check_admissibility(r)
+
+    prefix = sc.pacf_prefix(r)
+    assert prefix.order == 1
+
+
+# --- extend_at_boundary n_extra semantics -------------------------------------
+
+
+def test_extend_at_boundary_n_extra_counts_existing_tail():
+    r_boundary = np.array([1.0])
+    r_with_two_forced_values = sc.extend_at_boundary(r_boundary, n_extra=2)
+    assert r_with_two_forced_values.size == 3  # 1 (boundary order) + 2
+
+    # n_extra already matches the number of entries past the boundary that
+    # r_with_two_forced_values supplies, so nothing new is appended.
+    same = sc.extend_at_boundary(r_with_two_forced_values, n_extra=2)
+    np.testing.assert_allclose(same, r_with_two_forced_values)
+
+    # n_extra=4 counts the 2 already-supplied entries, so 2 more are added.
+    extended = sc.extend_at_boundary(r_with_two_forced_values, n_extra=4)
+    assert extended.size == 5  # 1 (boundary order) + 4
+    np.testing.assert_allclose(extended[:3], r_with_two_forced_values)
+
+

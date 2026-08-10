@@ -32,9 +32,30 @@ try:
 except sc.SingularToeplitzError as error:
     print("pacf() at the boundary raises:", error)
 
-# pacf_prefix() is the boundary-aware analysis: it never raises, and
-# reports exactly how far the independent PACF coordinates extend.
-result = sc.pacf_prefix(r_boundary)
-print("pacf_prefix().alpha  ->", result.alpha)
-print("pacf_prefix().order  ->", result.order)
-print("pacf_prefix().reached_boundary ->", result.reached_boundary)
+# pacf_status() is the cheap, non-raising diagnostic: it classifies a
+# sequence as interior / boundary / invalid without raising.
+status = sc.pacf_status(r_boundary)
+print("pacf_status() ->", status)
+
+if status.boundary:
+    result = sc.pacf_prefix(r_boundary)
+    print("pacf_prefix().alpha  ->", result.alpha)
+    print("pacf_prefix().order  ->", result.order)
+
+# A genuinely inadmissible sequence: pacf_status() reports "invalid" and
+# gives the order at which admissibility first failed.
+r_invalid = np.array([0.9, 0.95, 0.99])
+status_invalid = sc.pacf_status(r_invalid)
+print("pacf_status(r_invalid) ->", status_invalid)
+print("failed at order:", status_invalid.order)
+
+# pacf_status()/pacf_prefix() only describe the recursion up to its first
+# boundary; they do not validate coefficients supplied past it. r_1 = 1
+# forces r_2 = 1 too, so the supplied 0.5 below is inconsistent even
+# though pacf_status() still reports "boundary" at order 1.
+r_inconsistent_tail = np.array([1.0, 0.5])
+print("pacf_status(r_inconsistent_tail) ->", sc.pacf_status(r_inconsistent_tail))
+print(
+    "check_admissibility(r_inconsistent_tail) ->",
+    sc.check_admissibility(r_inconsistent_tail),
+)
