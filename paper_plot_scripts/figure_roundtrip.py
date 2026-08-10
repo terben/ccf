@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 import mpmath as mp
 import numpy as np
 
-import ccf as sc
+import ccf
 from style import aa_plot
 
 DEFAULT_JOBS = min(8, os.cpu_count() or 1)
@@ -114,8 +114,8 @@ def failure_rate_scan(
             for start in range(0, trials, TRIAL_BATCH_SIZE):
                 m = min(TRIAL_BATCH_SIZE, trials - start)
                 alpha_batch = rng.uniform(-bound, bound, size=(m, N))
-                r_batch = sc.from_pacf(alpha_batch)
-                status = sc.pacf_status(r_batch)
+                r_batch = ccf.from_pacf(alpha_batch)
+                status = ccf.pacf_status(r_batch)
                 failed = status.boundary | status.invalid
                 fails += int(np.count_nonzero(failed))
             results[(bound, N)] = fails / trials
@@ -125,8 +125,8 @@ def failure_rate_scan(
 def mp_roundtrip_error(alpha: np.ndarray, dps: int) -> float:
     """max_n |alpha_n - alpha_n'| at arbitrary precision, compared in
     the mp domain (not after downcasting to float64)."""
-    r_mp = sc.from_pacf_mp(alpha, dps=dps)
-    rec_mp = sc.pacf_mp(r_mp, dps=dps)
+    r_mp = ccf.from_pacf_mp(alpha, dps=dps)
+    rec_mp = ccf.pacf_mp(r_mp, dps=dps)
     err = max(abs(mp.mpf(a) - b) for a, b in zip(alpha, rec_mp))
     return float(err)
 
@@ -158,7 +158,7 @@ def precision_scan(
         for bound in BOUNDS:
             for N in (*n_values, hero_n):
                 trials = trials_by_n.get(N, hero_trials)
-                dps = sc.recommended_dps(N)
+                dps = ccf.recommended_dps(N)
                 alpha_samples = rng.uniform(-bound, bound, size=(trials, N))
 
                 if pool is None:

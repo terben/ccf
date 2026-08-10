@@ -28,7 +28,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ks_2samp, kurtosis, skew
 
-import ccf as sc
+import ccf
 from style import AA_TEXT_WIDTH, aa_plot
 
 # Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
@@ -378,8 +378,8 @@ def main() -> None:
     print("Converting r -> alpha via ccf.pacf() ...")
     t0 = time.time()
     try:
-        alpha_direct = sc.pacf(r_direct)
-    except (sc.SingularToeplitzError, ValueError) as error:
+        alpha_direct = ccf.pacf(r_direct)
+    except (ccf.SingularToeplitzError, ValueError) as error:
         raise RuntimeError(
             "ccf.pacf() could not recover an admissible alpha for "
             "the full batch -- at least one simulated row left the PACF "
@@ -401,12 +401,12 @@ def main() -> None:
 
     print("Converting alpha -> r via ccf.from_pacf() ...")
     t0 = time.time()
-    r_transport = sc.from_pacf(alpha_transport)
+    r_transport = ccf.from_pacf(alpha_transport)
     print(f"  ccf.from_pacf() on {alpha_transport.shape}: "
           f"{time.time() - t0:.2f}s")
 
     # Internal roundtrip check catches sign/indexing mistakes in the recursion.
-    check = sc.from_pacf(alpha_direct[: min(2000, args.samples)])
+    check = ccf.from_pacf(alpha_direct[: min(2000, args.samples)])
     roundtrip = float(np.max(np.abs(check - r_direct[: check.shape[0]])))
     print(f"Levinson-Durbin roundtrip max error: {roundtrip:.3e}")
 

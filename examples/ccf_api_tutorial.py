@@ -49,13 +49,13 @@ implementation details.
 
 # %%
 import numpy as np
-import ccf as sc
+import ccf
 
 np.set_printoptions(precision=6, suppress=True)
 
-print("ccf version:", sc.__version__)
+print("ccf version:", ccf.__version__)
 print("Public top-level names:")
-print(sc.__all__)
+print(ccf.__all__)
 
 # %% [markdown]
 """
@@ -70,8 +70,8 @@ with every interior PACF satisfying `abs(alpha_n) < 1`.
 
 Use
 
-    sc.pacf(r)         # r -> alpha
-    sc.from_pacf(alpha)  # alpha -> r
+    ccf.pacf(r)         # r -> alpha
+    ccf.from_pacf(alpha)  # alpha -> r
 
 These are the central numerical transformations.
 """
@@ -79,8 +79,8 @@ These are the central numerical transformations.
 # %%
 alpha = np.array([0.50, -0.30, 0.20])
 
-r = sc.from_pacf(alpha)
-alpha_recovered = sc.pacf(r)
+r = ccf.from_pacf(alpha)
+alpha_recovered = ccf.pacf(r)
 
 print("alpha:          ", alpha)
 print("r:              ", r)
@@ -105,8 +105,8 @@ the whole ensemble rather than looping over rows in Python.
 rng = np.random.default_rng(42)
 
 alpha_batch = rng.uniform(-0.6, 0.6, size=(5, 6))
-r_batch = sc.from_pacf(alpha_batch)
-alpha_batch_recovered = sc.pacf(r_batch)
+r_batch = ccf.from_pacf(alpha_batch)
+alpha_batch_recovered = ccf.pacf(r_batch)
 
 print("alpha_batch shape:", alpha_batch.shape)
 print("r_batch shape:    ", r_batch.shape)
@@ -136,18 +136,18 @@ For a supplied correlation sequence `r`, the float64 recursion distinguishes:
    the sequence is inadmissible; equivalently the recursion encounters a PACF
    outside the admissible range.
 
-For direct transformation, `sc.pacf(r)` is intentionally strict:
+For direct transformation, `ccf.pacf(r)` is intentionally strict:
 
 - interior -> returns the complete PACF vector;
-- boundary -> raises `sc.SingularToeplitzError`;
+- boundary -> raises `ccf.SingularToeplitzError`;
 - invalid -> raises `ValueError`.
 
-If you do not know in advance which case you have, use `sc.pacf_status(r)`.
+If you do not know in advance which case you have, use `ccf.pacf_status(r)`.
 It reports the state without raising for boundary or invalid sequences.
 """
 
 # %%
-r_interior = sc.from_pacf(np.array([0.2, -0.3, 0.4]))
+r_interior = ccf.from_pacf(np.array([0.2, -0.3, 0.4]))
 r_boundary = np.array([1.0, 0.5, 0.3])
 r_invalid = np.array([0.9, 0.95, 0.99])
 
@@ -156,7 +156,7 @@ for name, r_test in [
     ("boundary", r_boundary),
     ("invalid", r_invalid),
 ]:
-    status = sc.pacf_status(r_test)
+    status = ccf.pacf_status(r_test)
     print(
         f"{name:8s}: "
         f"interior={status.interior}, "
@@ -185,7 +185,7 @@ r_mixed = np.stack(
     ]
 )
 
-status = sc.pacf_status(r_mixed)
+status = ccf.pacf_status(r_mixed)
 
 print("interior mask:", status.interior)
 print("boundary mask:", status.boundary)
@@ -198,12 +198,12 @@ print("orders:       ", status.order)
 
 If `r` is known to be a regular admissible sequence, simply call
 
-    alpha = sc.pacf(r)
+    alpha = ccf.pacf(r)
 
 If `r` comes from data, a fit, a file, or another source of uncertain
 quality, the more informative workflow is:
 
-    status = sc.pacf_status(r)
+    status = ccf.pacf_status(r)
 
 and then branch by mathematical state.
 
@@ -214,17 +214,17 @@ This avoids using exceptions as the primary diagnostic mechanism.
 def inspect_r(r):
     """Small tutorial helper showing the intended public-API workflow."""
     r = np.asarray(r, dtype=float)
-    status = sc.pacf_status(r)
+    status = ccf.pacf_status(r)
 
     if status.interior:
         return {
             "state": "interior",
             "order": status.order,
-            "alpha": sc.pacf(r),
+            "alpha": ccf.pacf(r),
         }
 
     if status.boundary:
-        prefix = sc.pacf_prefix(r)
+        prefix = ccf.pacf_prefix(r)
         return {
             "state": "boundary",
             "order": status.order,
@@ -257,7 +257,7 @@ A boundary is *admissible but degenerate*. It is not the same as an invalid
 sequence.
 
 At a boundary, the full `r <-> alpha` bijection stops because the innovation
-variance reaches zero. `sc.pacf_prefix(r)` returns the maximal independent
+variance reaches zero. `ccf.pacf_prefix(r)` returns the maximal independent
 PACF prefix and the recursion state needed to understand that boundary.
 
 The returned `PrefixResult` contains:
@@ -270,7 +270,7 @@ The returned `PrefixResult` contains:
 """
 
 # %%
-prefix = sc.pacf_prefix(r_boundary)
+prefix = ccf.pacf_prefix(r_boundary)
 
 print("alpha prefix:     ", prefix.alpha)
 print("order:            ", prefix.order)
@@ -291,7 +291,7 @@ predictor / null-vector recurrence.
 
 Use
 
-    sc.extend_at_boundary(r, n_extra)
+    ccf.extend_at_boundary(r, n_extra)
 
 to append that forced continuation.
 
@@ -303,19 +303,19 @@ boundary.
 # %%
 r_at_boundary = np.array([1.0])
 
-r_extended = sc.extend_at_boundary(r_at_boundary, n_extra=5)
+r_extended = ccf.extend_at_boundary(r_at_boundary, n_extra=5)
 
 print("boundary sequence:", r_at_boundary)
 print("forced extension: ", r_extended)
 
 # The extension remains admissible, although degenerate.
-assert sc.check_admissibility(r_extended)
+assert ccf.check_admissibility(r_extended)
 
 # %% [markdown]
 """
 ## 7. `check_admissibility`
 
-`sc.check_admissibility(r)` is a simple boolean check.
+`ccf.check_admissibility(r)` is a simple boolean check.
 
 Important: a correctly continued boundary sequence is admissible, so this
 function returns `True` for both
@@ -329,13 +329,13 @@ With `raise_error=True`, inadmissibility is reported as `ValueError`.
 """
 
 # %%
-print("interior admissible:", sc.check_admissibility(r_interior))
-print("boundary admissible:", sc.check_admissibility(r_extended))
-print("invalid admissible: ", sc.check_admissibility(r_invalid))
+print("interior admissible:", ccf.check_admissibility(r_interior))
+print("boundary admissible:", ccf.check_admissibility(r_extended))
+print("invalid admissible: ", ccf.check_admissibility(r_invalid))
 
-assert sc.check_admissibility(r_interior)
-assert sc.check_admissibility(r_extended)
-assert not sc.check_admissibility(r_invalid)
+assert ccf.check_admissibility(r_interior)
+assert ccf.check_admissibility(r_extended)
+assert not ccf.check_admissibility(r_invalid)
 
 # %% [markdown]
 """
@@ -347,7 +347,7 @@ innovation variance.
 
 The attached code snapshot returns bounds for the *supplied* coefficients:
 
-    lower, upper = sc.admissible_bounds(r)
+    lower, upper = ccf.admissible_bounds(r)
 
 with `len(lower) == len(r)`.
 
@@ -362,7 +362,7 @@ continuation.
 # %%
 r = np.array([0.1, 0.2, 0.3, 0.9])
 
-lower, upper = sc.admissible_bounds(r)
+lower, upper = ccf.admissible_bounds(r)
 
 print("r:    ", r)
 print("lower:", lower)
@@ -391,16 +391,16 @@ then asks `admissible_bounds` for that extended sequence.
 def next_admissible_interval(r):
     """Compatibility helper for the current and planned bounds API."""
     r = np.asarray(r, dtype=float)
-    lower, upper = sc.admissible_bounds(r)
+    lower, upper = ccf.admissible_bounds(r)
 
     # Newer N+1 convention, if present.
     if len(lower) == len(r) + 1:
         return float(lower[-1]), float(upper[-1])
 
     # Current attached snapshot: extend through alpha_(N+1) = 0.
-    alpha = sc.pacf(r)
-    r_center = sc.from_pacf(np.append(alpha, 0.0))
-    lower_ext, upper_ext = sc.admissible_bounds(r_center)
+    alpha = ccf.pacf(r)
+    r_center = ccf.from_pacf(np.append(alpha, 0.0))
+    lower_ext, upper_ext = ccf.admissible_bounds(r_center)
     return float(lower_ext[-1]), float(upper_ext[-1])
 
 
@@ -432,7 +432,7 @@ half_width = 0.5 * (next_hi - next_lo)
 r_next = center + alpha_next * half_width
 
 r_augmented = np.append(r, r_next)
-alpha_augmented = sc.pacf(r_augmented)
+alpha_augmented = ccf.pacf(r_augmented)
 
 print("chosen alpha_next:   ", alpha_next)
 print("constructed r_next:  ", r_next)
@@ -460,7 +460,7 @@ that interval is an application-level decision.
 # %%
 r_bad = np.array([0.2, 0.1, 0.95])
 
-status = sc.pacf_status(r_bad)
+status = ccf.pacf_status(r_bad)
 
 if status.invalid:
     bad_order = status.order
@@ -475,7 +475,7 @@ if status.invalid:
 """
 ## 10. Schneider--Hartlap coordinates
 
-`sc.sh_coordinates(r)` is an alias of `sc.pacf(r)`.
+`ccf.sh_coordinates(r)` is an alias of `ccf.pacf(r)`.
 
 It exists because the Schneider--Hartlap normalized coordinate `x_n` is
 identical to the partial autocorrelation `alpha_n`:
@@ -484,11 +484,11 @@ identical to the partial autocorrelation `alpha_n`:
 """
 
 # %%
-r = sc.from_pacf(np.array([0.2, -0.4, 0.1]))
+r = ccf.from_pacf(np.array([0.2, -0.4, 0.1]))
 
-np.testing.assert_allclose(sc.sh_coordinates(r), sc.pacf(r))
+np.testing.assert_allclose(ccf.sh_coordinates(r), ccf.pacf(r))
 
-print("SH coordinates:", sc.sh_coordinates(r))
+print("SH coordinates:", ccf.sh_coordinates(r))
 
 # %% [markdown]
 """
@@ -502,8 +502,8 @@ those box constraints elementwise:
 
 Use
 
-    sc.fisher(alpha)
-    sc.inverse_fisher(y)
+    ccf.fisher(alpha)
+    ccf.inverse_fisher(y)
 
 Both functions support 1-D arrays and 2-D batches.
 """
@@ -511,8 +511,8 @@ Both functions support 1-D arrays and 2-D batches.
 # %%
 alpha = np.array([0.2, -0.5, 0.8])
 
-y = sc.fisher(alpha)
-alpha_back = sc.inverse_fisher(y)
+y = ccf.fisher(alpha)
+alpha_back = ccf.inverse_fisher(y)
 
 print("alpha:", alpha)
 print("y:    ", y)
@@ -535,15 +535,15 @@ For finite `y`, this constructs a strict interior sequence automatically.
 # %%
 y = np.array([0.5, -1.0, 0.2, 1.5])
 
-alpha = sc.inverse_fisher(y)
-r = sc.from_pacf(alpha)
+alpha = ccf.inverse_fisher(y)
+r = ccf.from_pacf(alpha)
 
 print("y:    ", y)
 print("alpha:", alpha)
 print("r:    ", r)
-print("status:", sc.pacf_status(r))
+print("status:", ccf.pacf_status(r))
 
-assert sc.pacf_status(r).interior
+assert ccf.pacf_status(r).interior
 
 # %% [markdown]
 """
@@ -551,7 +551,7 @@ assert sc.pacf_status(r).interior
 
 Use
 
-    sc.innovation_variances(alpha)
+    ccf.innovation_variances(alpha)
 
 to compute
 
@@ -567,7 +567,7 @@ The result has length `N+1`, or shape `(M, N+1)` for a batch.
 
 # %%
 alpha = np.array([0.2, -0.3, 0.4])
-sigma2 = sc.innovation_variances(alpha)
+sigma2 = ccf.innovation_variances(alpha)
 
 print("alpha: ", alpha)
 print("sigma2:", sigma2)
@@ -583,7 +583,7 @@ alpha_batch = np.array(
     ]
 )
 
-sigma2_batch = sc.innovation_variances(alpha_batch)
+sigma2_batch = ccf.innovation_variances(alpha_batch)
 
 print("batch sigma2:\n", sigma2_batch)
 print("shape:", sigma2_batch.shape)
@@ -595,8 +595,8 @@ print("shape:", sigma2_batch.shape)
 The change of variables from PACFs to correlations has a triangular
 Jacobian. The package exposes
 
-    sc.jacobian(alpha)
-    sc.log_jacobian(alpha)
+    ccf.jacobian(alpha)
+    ccf.log_jacobian(alpha)
 
 The log form is preferable at high order because the determinant can become
 very small.
@@ -605,8 +605,8 @@ very small.
 # %%
 alpha = np.array([0.2, -0.3, 0.4, 0.1])
 
-J = sc.jacobian(alpha)
-logJ = sc.log_jacobian(alpha)
+J = ccf.jacobian(alpha)
+logJ = ccf.log_jacobian(alpha)
 
 print("Jacobian:    ", J)
 print("log Jacobian:", logJ)
@@ -620,8 +620,8 @@ np.testing.assert_allclose(np.log(J), logJ, rtol=1e-12, atol=1e-12)
 The package provides the Lebesgue volume of the admissible region in
 correlation-coefficient space:
 
-    sc.admissible_volume(N)
-    sc.log_admissible_volume(N)
+    ccf.admissible_volume(N)
+    ccf.log_admissible_volume(N)
 
 Again, prefer the logarithmic form at high order because the volume shrinks
 rapidly and can underflow in float64.
@@ -629,8 +629,8 @@ rapidly and can underflow in float64.
 
 # %%
 for N in [1, 2, 5, 10, 50]:
-    volume = sc.admissible_volume(N)
-    log_volume = sc.log_admissible_volume(N)
+    volume = ccf.admissible_volume(N)
+    log_volume = ccf.log_admissible_volume(N)
     print(f"N={N:2d}: V_N={volume:.6e}, log(V_N)={log_volume:.6f}")
 
 # %% [markdown]
@@ -640,9 +640,9 @@ for N in [1, 2, 5, 10, 50]:
 High-order or strongly ill-conditioned roundtrips can exceed float64's
 useful precision. If `mpmath` is installed, use
 
-    sc.recommended_dps(N)
-    sc.from_pacf_mp(alpha, dps=...)
-    sc.pacf_mp(r, dps=...)
+    ccf.recommended_dps(N)
+    ccf.from_pacf_mp(alpha, dps=...)
+    ccf.pacf_mp(r, dps=...)
 
 The arbitrary-precision functions are 1-D and return lists of `mpmath.mpf`
 objects, intentionally preserving high precision rather than converting back
@@ -653,16 +653,16 @@ not a mathematical guarantee.
 """
 
 # %%
-if hasattr(sc, "recommended_dps"):
+if hasattr(ccf, "recommended_dps"):
     N = 32
-    dps = sc.recommended_dps(N)
+    dps = ccf.recommended_dps(N)
     print(f"recommended dps for N={N}: {dps}")
 
     rng = np.random.default_rng(3)
     alpha = rng.uniform(-0.8, 0.8, size=N)
 
-    r_mp = sc.from_pacf_mp(alpha, dps=dps)
-    alpha_mp = sc.pacf_mp(r_mp, dps=dps)
+    r_mp = ccf.from_pacf_mp(alpha, dps=dps)
+    alpha_mp = ccf.pacf_mp(r_mp, dps=dps)
 
     # Compare in ordinary float only for this small tutorial demonstration.
     alpha_back = np.array([float(a) for a in alpha_mp])
@@ -711,7 +711,7 @@ alpha_ref = pacf_reference(r_ref)
 print("reference r:    ", r_ref)
 print("reference alpha:", alpha_ref)
 
-np.testing.assert_allclose(r_ref, sc.from_pacf(alpha), rtol=1e-12, atol=1e-12)
+np.testing.assert_allclose(r_ref, ccf.from_pacf(alpha), rtol=1e-12, atol=1e-12)
 np.testing.assert_allclose(alpha_ref, alpha, rtol=1e-12, atol=1e-12)
 
 # %% [markdown]
@@ -808,13 +808,13 @@ A common generative workflow is
 # %%
 y = np.array([0.2, -0.8, 1.1, 0.0, 0.5])
 
-alpha = sc.inverse_fisher(y)
-r = sc.from_pacf(alpha)
+alpha = ccf.inverse_fisher(y)
+r = ccf.from_pacf(alpha)
 
 print("y:", y)
 print("alpha:", alpha)
 print("r:", r)
-print("admissible:", sc.check_admissibility(r))
+print("admissible:", ccf.check_admissibility(r))
 
 # %% [markdown]
 """
@@ -826,18 +826,18 @@ Use status first when the input may be problematic.
 # %%
 r_unknown = np.array([0.2, 0.1, 0.95])
 
-status = sc.pacf_status(r_unknown)
+status = ccf.pacf_status(r_unknown)
 print("status:", status)
 
 if status.interior:
-    alpha = sc.pacf(r_unknown)
+    alpha = ccf.pacf(r_unknown)
     print("PACFs:", alpha)
 
 elif status.boundary:
-    prefix = sc.pacf_prefix(r_unknown)
+    prefix = ccf.pacf_prefix(r_unknown)
     print("boundary PACF prefix:", prefix.alpha)
     print("forced future:",
-          sc.extend_at_boundary(r_unknown, n_extra=3))
+          ccf.extend_at_boundary(r_unknown, n_extra=3))
 
 else:
     valid_prefix = r_unknown[: status.order - 1]
@@ -862,7 +862,7 @@ problematic sample.
 
 # %%
 alpha_good = rng.uniform(-0.5, 0.5, size=(4, 5))
-r_good = sc.from_pacf(alpha_good)
+r_good = ccf.from_pacf(alpha_good)
 
 r_test = np.vstack(
     [
@@ -872,7 +872,7 @@ r_test = np.vstack(
     ]
 )
 
-status = sc.pacf_status(r_test)
+status = ccf.pacf_status(r_test)
 
 print("interior:", status.interior)
 print("boundary:", status.boundary)
@@ -884,33 +884,33 @@ print("order:   ", status.order)
 ## 20. Public API cheat sheet
 
 ### Core transformations
-- `sc.pacf(r)`
-- `sc.from_pacf(alpha)`
+- `ccf.pacf(r)`
+- `ccf.from_pacf(alpha)`
 
 ### Diagnostics and boundary handling
-- `sc.pacf_status(r)` -> `PACFStatus`
-- `sc.pacf_prefix(r)` -> `PrefixResult`
-- `sc.check_admissibility(r)`
-- `sc.admissible_bounds(r)`
-- `sc.extend_at_boundary(r, n_extra)`
-- `sc.SingularToeplitzError`
+- `ccf.pacf_status(r)` -> `PACFStatus`
+- `ccf.pacf_prefix(r)` -> `PrefixResult`
+- `ccf.check_admissibility(r)`
+- `ccf.admissible_bounds(r)`
+- `ccf.extend_at_boundary(r, n_extra)`
+- `ccf.SingularToeplitzError`
 
 ### Alternative coordinates and derived quantities
-- `sc.sh_coordinates(r)`
-- `sc.fisher(alpha)`
-- `sc.inverse_fisher(y)`
-- `sc.innovation_variances(alpha)`
-- `sc.jacobian(alpha)`
-- `sc.log_jacobian(alpha)`
+- `ccf.sh_coordinates(r)`
+- `ccf.fisher(alpha)`
+- `ccf.inverse_fisher(y)`
+- `ccf.innovation_variances(alpha)`
+- `ccf.jacobian(alpha)`
+- `ccf.log_jacobian(alpha)`
 
 ### Admissible-region geometry
-- `sc.admissible_volume(N)`
-- `sc.log_admissible_volume(N)`
+- `ccf.admissible_volume(N)`
+- `ccf.log_admissible_volume(N)`
 
 ### Arbitrary precision (optional `mpmath`)
-- `sc.recommended_dps(N)`
-- `sc.from_pacf_mp(alpha, dps=...)`
-- `sc.pacf_mp(r, dps=...)`
+- `ccf.recommended_dps(N)`
+- `ccf.from_pacf_mp(alpha, dps=...)`
+- `ccf.pacf_mp(r, dps=...)`
 
 ### Paper-facing auxiliary modules
 - `ccf.reference`: simple line-by-line numerical recursion
