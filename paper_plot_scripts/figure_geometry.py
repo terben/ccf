@@ -2,7 +2,7 @@
 region, Sect. 5.1: correlation space vs. natural (PACF) coordinates.
 
 Run: python paper_plot_scripts/figure_geometry.py
-Writes: figs/fig_admissible_combined.pdf
+Writes: figs/fig_1_admissible_regions.pdf
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -370,7 +370,7 @@ def make_figure():
 
 def main():
     fig = make_figure()
-    out = FIGDIR / "fig_admissible_combined.pdf"
+    out = FIGDIR / "fig_1_admissible_regions.pdf"
     fig.savefig(out)
     plt.close(fig)
     print(f"Wrote {out}")

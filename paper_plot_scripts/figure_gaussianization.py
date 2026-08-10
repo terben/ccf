@@ -13,7 +13,7 @@ Run:
 matches the publication sample size (M=400000) and is significantly
 slower.
 
-Writes a PDF and, unless --no-png is passed, a PNG preview.
+Writes a PDF and, if --png is passed, a PNG preview.
 """
 
 from __future__ import annotations
@@ -89,9 +89,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--diagonal-cov", action="store_true",
                    help="use only diagonal y covariance (diagnostic variant)")
     p.add_argument("--output", "-o", type=Path,
-                   default=FIGDIR / "fig_4_qg_transport.pdf",
-                   help="output PDF path (default: ../figs/fig_4_qg_transport.pdf)")
-    p.add_argument("--no-png", action="store_true",
+                   default=FIGDIR / "fig_3_gaussianisation.pdf",
+                   help="output PDF path (default: ../figs/fig_3_gaussianisation.pdf)")
+    p.add_argument("--png", action="store_true",
                    help="do not also write a PNG preview")
     p.add_argument(
         "--stats-table", type=Path, default=None, metavar="FILE",
@@ -330,9 +330,11 @@ def make_figure(
         )
         if show_insets:
             ax.text(
-                0.98, 0.97, r_text, transform=ax.transAxes, ha="right", va="top",
+                0.98, 0.97, r_text, transform=ax.transAxes,
+                ha="right", va="top",
                 linespacing=1.18,
-                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.86,
+                bbox=dict(boxstyle="round,pad=0.25",
+                          facecolor="white", alpha=0.86,
                           edgecolor="0.75", linewidth=0.55),
             )
 
@@ -368,7 +370,8 @@ def main() -> None:
         raise ValueError(f"lags must lie between 1 and {max_lag}")
 
     seed_sequence = np.random.SeedSequence(args.seed)
-    rng_direct, rng_transport = [np.random.default_rng(s) for s in seed_sequence.spawn(2)]
+    rng_direct, rng_transport = [np.random.default_rng(s)
+                                 for s in seed_sequence.spawn(2)]
 
     print(f"Simulating {args.samples:,} direct realizations ...")
     r_direct = simulate_direct_r(
@@ -396,7 +399,8 @@ def main() -> None:
     y_direct = np.arctanh(alpha_direct)
 
     print("Fitting and drawing the multivariate Gaussian in y-space ...")
-    y_transport, _, _ = gaussian_transport(y_direct, rng_transport, args.diagonal_cov)
+    y_transport, _, _ = gaussian_transport(y_direct, rng_transport,
+                                           args.diagonal_cov)
     alpha_transport = np.tanh(y_transport)
 
     print("Converting alpha -> r via ccf.from_pacf() ...")
@@ -428,7 +432,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output)
     print(f"Wrote {args.output}")
-    if not args.no_png:
+
+    if args.png:
         png = args.output.with_suffix(".png")
         fig.savefig(png, dpi=300)
         print(f"Wrote {png}")

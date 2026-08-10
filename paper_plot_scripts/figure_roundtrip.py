@@ -18,7 +18,7 @@ Run:
 docs/development_notes.md for why a third, O(N^2)-timing panel is not
 included.
 
-Writes: figs/fig_3_roundtrip.pdf, figs/fig_3_roundtrip.png
+Writes: figs/fig_2_roundtrip.pdf
 """
 
 from __future__ import annotations
@@ -231,7 +231,6 @@ def make_figure(
 
     # constrained_layout is enabled globally by aa_plot.
     fig.savefig(path_stub.with_suffix(".pdf"))
-    fig.savefig(path_stub.with_suffix(".png"))
     plt.close(fig)
 
 
@@ -273,7 +272,7 @@ def main() -> None:
     make_figure(
         failrate, failrate_n_values,
         precision, precision_n_values, hero_n,
-        FIGDIR / "fig_3_roundtrip",
+        FIGDIR / "fig_2_roundtrip",
     )
     print(f"Total: {time.time() - t0:.1f}s")
 
