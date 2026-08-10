@@ -6,13 +6,9 @@ It provides the numerical tools used in the paper and a small API for experiment
 
 The central transformations implemented by the package are
 
-[
-r
-\quad\longleftrightarrow\quad
-\alpha
-\quad\longleftrightarrow\quad
-y,
-]
+$$
+r \quad\longleftrightarrow\quad \alpha \quad\longleftrightarrow\quad y,
+$$
 
 where `r` denotes correlation coefficients, `alpha` partial autocorrelations, and `y` Fisher coordinates.
 
@@ -169,3 +165,11 @@ The original constrained-correlation-function formalism is described in:
 ## License
 
 BSD 3-Clause License.
+
+## Development note
+
+Parts of the code, documentation, tests, and API design were developed
+with the assistance of ChatGPT (OpenAI) and Claude Code (Anthropic).
+
+The mathematical concepts, algorithms, and overall project design were
+developed and curated by the project author.
