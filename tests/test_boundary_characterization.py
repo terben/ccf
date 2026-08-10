@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import ccf as sc
+import ccf
 from ccf import symbolic
 
 # --- A. symbolic ground truth at the boundary -------------------------------
@@ -45,7 +45,7 @@ def _exponential_boundary_r(order: int, rho: float, sign: int) -> np.ndarray:
 def test_boundary_alpha_prefix_matches_symbolic(order, sign):
     r = _exponential_boundary_r(order, rho=0.3, sign=sign)
 
-    alpha = sc.pacf_prefix(r).alpha
+    alpha = ccf.pacf_prefix(r).alpha
 
     assert alpha.size == order
     assert alpha[-1] == pytest.approx(sign, abs=1e-8)
@@ -62,7 +62,7 @@ def test_boundary_alpha_prefix_matches_symbolic(order, sign):
 def test_boundary_admissible_bounds_match_symbolic_at_every_order(order):
     r = _exponential_boundary_r(order, rho=0.3, sign=1)
 
-    r_lower, r_upper = sc.admissible_bounds(r)
+    r_lower, r_upper = ccf.admissible_bounds(r)
 
     for n in range(1, order + 1):
         lo_sym, hi_sym = symbolic.admissible_bounds_symbolic(n)
@@ -84,7 +84,7 @@ def test_boundary_admissible_bounds_match_symbolic_at_every_order(order):
 def test_boundary_sequence_is_admissible(order):
     r = _exponential_boundary_r(order, rho=0.3, sign=1)
 
-    assert sc.check_admissibility(r)
+    assert ccf.check_admissibility(r)
 
 
 # --- B. figure-relevant dimensions ------------------------------------------
@@ -110,9 +110,9 @@ def test_roundtrip_at_figure_roundtrip_hero_dimension_mpmath(bound):
     rng = np.random.default_rng(1)
     alpha = rng.uniform(-bound, bound, size=n_lags)
 
-    dps = sc.recommended_dps(n_lags)
-    r_mp = sc.from_pacf_mp(alpha, dps=dps)
-    alpha_back_mp = sc.pacf_mp(r_mp, dps=dps)
+    dps = ccf.recommended_dps(n_lags)
+    r_mp = ccf.from_pacf_mp(alpha, dps=dps)
+    alpha_back_mp = ccf.pacf_mp(r_mp, dps=dps)
 
     alpha_back = np.array([float(a) for a in alpha_back_mp])
     np.testing.assert_allclose(alpha_back, alpha, rtol=1e-9, atol=1e-9)
@@ -125,7 +125,7 @@ def test_roundtrip_at_gaussianization_figure_batch_dimensions():
     rng = np.random.default_rng(2)
     alpha = rng.uniform(-0.5, 0.5, size=(n_samples, n_lags))
 
-    r = sc.from_pacf(alpha)
-    alpha_back = sc.pacf(r)
+    r = ccf.from_pacf(alpha)
+    alpha_back = ccf.pacf(r)
 
     np.testing.assert_allclose(alpha_back, alpha, rtol=1e-9, atol=1e-9)

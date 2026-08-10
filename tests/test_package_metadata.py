@@ -7,11 +7,11 @@ import sys
 
 import pytest
 
-import ccf as sc
+import ccf
 
 
 def test_version_matches_installed_metadata():
-    assert sc.__version__ == importlib.metadata.version("ccf")
+    assert ccf.__version__ == importlib.metadata.version("ccf")
 
 
 def test_version_is_single_sourced_from_pyproject():
@@ -22,20 +22,20 @@ def test_version_is_single_sourced_from_pyproject():
     with open(pyproject, "rb") as f:
         data = tomllib.load(f)
 
-    assert sc.__version__ == data["project"]["version"]
+    assert ccf.__version__ == data["project"]["version"]
 
 
 def test_all_exported_names_are_importable_attributes():
-    for name in sc.__all__:
-        assert hasattr(sc, name), f"{name!r} listed in __all__ but missing"
+    for name in ccf.__all__:
+        assert hasattr(ccf, name), f"{name!r} listed in __all__ but missing"
 
 
 def test_mpmath_dependent_names_present_when_mpmath_installed():
     import mpmath  # noqa: F401 -- presence check for the "precision" extra
 
     for name in ("pacf_mp", "from_pacf_mp", "recommended_dps"):
-        assert hasattr(sc, name)
-        assert name in sc.__all__
+        assert hasattr(ccf, name)
+        assert name in ccf.__all__
 
 
 def test_import_error_unrelated_to_mpmath_is_not_swallowed(monkeypatch):

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import ccf as sc
+import ccf
 from ccf.reference import from_pacf_reference, pacf_reference
 
 
@@ -11,10 +11,10 @@ from ccf.reference import from_pacf_reference, pacf_reference
 def test_pacf_reference_matches_pacf(order):
     rng = np.random.default_rng(order)
     alpha = rng.uniform(-0.8, 0.8, size=order)
-    r = sc.from_pacf(alpha)
+    r = ccf.from_pacf(alpha)
 
     np.testing.assert_allclose(
-        pacf_reference(r), sc.pacf(r), rtol=1e-12, atol=1e-12
+        pacf_reference(r), ccf.pacf(r), rtol=1e-12, atol=1e-12
     )
 
 
@@ -24,7 +24,7 @@ def test_from_pacf_reference_matches_from_pacf(order):
     alpha = rng.uniform(-0.8, 0.8, size=order)
 
     np.testing.assert_allclose(
-        from_pacf_reference(alpha), sc.from_pacf(alpha), rtol=1e-12, atol=1e-12
+        from_pacf_reference(alpha), ccf.from_pacf(alpha), rtol=1e-12, atol=1e-12
     )
 
 
@@ -58,5 +58,5 @@ def test_pacf_reference_rejects_inadmissible_sequence():
 
 
 def test_reference_not_exported_at_top_level():
-    assert not hasattr(sc, "pacf_reference")
-    assert not hasattr(sc, "from_pacf_reference")
+    assert not hasattr(ccf, "pacf_reference")
+    assert not hasattr(ccf, "from_pacf_reference")

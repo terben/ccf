@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import ccf as sc
+import ccf
 
 PAPER_PLOT_SCRIPTS = Path(__file__).resolve().parent.parent / "paper_plot_scripts"
 if str(PAPER_PLOT_SCRIPTS) not in sys.path:
@@ -25,14 +25,14 @@ import figure_roundtrip as fr  # noqa: E402
 def test_chunk_size_does_not_change_failure_count(chunk_size):
     rng = np.random.default_rng(1)
     alpha = rng.uniform(-0.9, 0.9, size=(200, 64))
-    r = sc.from_pacf(alpha)
+    r = ccf.from_pacf(alpha)
 
-    full_status = sc.pacf_status(r)
+    full_status = ccf.pacf_status(r)
     full_fails = int(np.count_nonzero(full_status.boundary | full_status.invalid))
 
     chunked_fails = 0
     for start in range(0, r.shape[0], chunk_size):
-        chunk_status = sc.pacf_status(r[start : start + chunk_size])
+        chunk_status = ccf.pacf_status(r[start : start + chunk_size])
         chunked_fails += int(
             np.count_nonzero(chunk_status.boundary | chunk_status.invalid)
         )
@@ -52,9 +52,9 @@ def test_failure_rate_scan_matches_per_trial_reference_loop():
                 for _ in range(trials):
                     alpha = rng.uniform(-bound, bound, size=N)
                     try:
-                        r = sc.from_pacf(alpha)
-                        sc.pacf(r)
-                    except (sc.SingularToeplitzError, ValueError):
+                        r = ccf.from_pacf(alpha)
+                        ccf.pacf(r)
+                    except (ccf.SingularToeplitzError, ValueError):
                         fails += 1
                 results[(bound, N)] = fails / trials
         return results
