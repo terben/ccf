@@ -1,6 +1,6 @@
 # %% [markdown]
 """
-# schurcorr: a practical API tutorial
+# ccf: a practical API tutorial
 
 This file is a VS Code / Spyder notebook-style Python script. Each `# %%`
 marker defines a cell.
@@ -40,7 +40,7 @@ If you only have a few minutes:
 2. run Sections 5--9 to understand boundary and invalid inputs;
 3. run Sections 11--14 for the coordinate geometry used in the paper;
 4. use Section 15 only when float64 conditioning becomes limiting;
-5. inspect `schurcorr.reference` alongside the paper equations when you want
+5. inspect `ccf.reference` alongside the paper equations when you want
    the most transparent implementation.
 
 That is enough to start using the numerical API without first reading the
@@ -49,11 +49,11 @@ implementation details.
 
 # %%
 import numpy as np
-import schurcorr as sc
+import ccf as sc
 
 np.set_printoptions(precision=6, suppress=True)
 
-print("schurcorr version:", sc.__version__)
+print("ccf version:", sc.__version__)
 print("Public top-level names:")
 print(sc.__all__)
 
@@ -691,7 +691,7 @@ There is no arbitrary-precision `extend` mode.
 ## 16. Didactic reference implementation
 
 For readers who want to compare the code directly with the equations in the
-paper, `schurcorr.reference` provides deliberately simple, single-sequence
+paper, `ccf.reference` provides deliberately simple, single-sequence
 implementations:
 
     pacf_reference
@@ -702,7 +702,7 @@ to make the Levinson--Durbin equations easy to inspect.
 """
 
 # %%
-from schurcorr.reference import pacf_reference, from_pacf_reference
+from ccf.reference import pacf_reference, from_pacf_reference
 
 alpha = np.array([0.3, -0.2, 0.4])
 r_ref = from_pacf_reference(alpha)
@@ -718,7 +718,7 @@ np.testing.assert_allclose(alpha_ref, alpha, rtol=1e-12, atol=1e-12)
 """
 ## 17. Optional symbolic helpers
 
-With the `symbolic` extra installed, `schurcorr.symbolic` can generate and
+With the `symbolic` extra installed, `ccf.symbolic` can generate and
 verify low-order formulas. This is useful for checking the paper's algebra,
 not for large numerical calculations.
 
@@ -737,7 +737,7 @@ successful verification returns exactly zero.
 
 # %%
 try:
-    from schurcorr import symbolic
+    from ccf import symbolic
 
     print("alpha_3 =", symbolic.pacf_symbolic(3))
 
@@ -913,8 +913,8 @@ print("order:   ", status.order)
 - `sc.pacf_mp(r, dps=...)`
 
 ### Paper-facing auxiliary modules
-- `schurcorr.reference`: simple line-by-line numerical recursion
-- `schurcorr.symbolic`: low-order symbolic verification
+- `ccf.reference`: simple line-by-line numerical recursion
+- `ccf.symbolic`: low-order symbolic verification
 
 For mathematical derivations, notation, and the exact boundary semantics,
 read the paper together with `docs/notation.md` and
