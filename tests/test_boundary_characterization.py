@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-import schurcorr as sc
-from schurcorr import symbolic
+import ccf as sc
+from ccf import symbolic
 
 # --- A. symbolic ground truth at the boundary -------------------------------
 #
@@ -12,10 +12,10 @@ from schurcorr import symbolic
 # rho, rho^2, ..., rho^{order-1}, which is admissible at every order since it
 # is the autocorrelation of a stationary AR(1) process), the admissible
 # interval for r_order is [r_lower, r_upper] per
-# schurcorr.symbolic.admissible_bounds_symbolic. Setting r_order to exactly
+# ccf.symbolic.admissible_bounds_symbolic. Setting r_order to exactly
 # that boundary forces alpha_order = +-1, independently of the numerical
 # recursion under test: the boundary r-value and the expected alpha-prefix
-# both come from the symbolic module, not from schurcorr.levinson.
+# both come from the symbolic module, not from ccf.levinson.
 
 
 def _exponential_boundary_r(order: int, rho: float, sign: int) -> np.ndarray:

@@ -2,7 +2,7 @@
 Independent cross-checks against statsmodels.
 
 These tests compare the numerical Levinson--Durbin implementation in
-schurcorr with the corresponding routines provided by statsmodels.
+ccf with the corresponding routines provided by statsmodels.
 
 The comparison uses exact autocorrelation sequences rather than estimated
 sample autocorrelations. Therefore, statsmodels is called with
@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import schurcorr as sc
+import ccf as sc
 
 
 statsmodels = pytest.importorskip("statsmodels")
@@ -50,11 +50,11 @@ def test_pacf_matches_statsmodels(alpha: np.ndarray) -> None:
         isacov=True,
     )
 
-    alpha_schurcorr = sc.pacf(r)
+    alpha_ccf = sc.pacf(r)
 
     # statsmodels includes PACF(0) = 1.
     np.testing.assert_allclose(
-        alpha_schurcorr,
+        alpha_ccf,
         pacf_statsmodels[1:],
         rtol=1.0e-12,
         atol=1.0e-12,
@@ -83,11 +83,11 @@ def test_from_pacf_matches_statsmodels(alpha: np.ndarray) -> None:
         nlags=alpha.size,
     )
 
-    r_schurcorr = sc.from_pacf(alpha)
+    r_ccf = sc.from_pacf(alpha)
 
     # statsmodels includes ACF(0) = 1.
     np.testing.assert_allclose(
-        r_schurcorr,
+        r_ccf,
         autocorrelation_statsmodels[1:],
         rtol=1.0e-12,
         atol=1.0e-12,
@@ -106,7 +106,7 @@ def test_statsmodels_crosscheck_random_sequences() -> None:
             # floating-point behavior near abs(alpha_n) = 1.
             alpha = rng.uniform(-0.8, 0.8, size=order)
 
-            r_schurcorr = sc.from_pacf(alpha)
+            r_ccf = sc.from_pacf(alpha)
 
             pacf_with_zero_lag = np.concatenate(([1.0], alpha))
             _, r_statsmodels = levinson_durbin_pacf(
@@ -115,13 +115,13 @@ def test_statsmodels_crosscheck_random_sequences() -> None:
             )
 
             np.testing.assert_allclose(
-                r_schurcorr,
+                r_ccf,
                 r_statsmodels[1:],
                 rtol=1.0e-11,
                 atol=1.0e-12,
             )
 
-            autocovariance = np.concatenate(([1.0], r_schurcorr))
+            autocovariance = np.concatenate(([1.0], r_ccf))
             _, _, alpha_statsmodels, _, _ = levinson_durbin(
                 autocovariance,
                 nlags=order,
@@ -129,7 +129,7 @@ def test_statsmodels_crosscheck_random_sequences() -> None:
             )
 
             np.testing.assert_allclose(
-                sc.pacf(r_schurcorr),
+                sc.pacf(r_ccf),
                 alpha_statsmodels[1:],
                 rtol=1.0e-11,
                 atol=1.0e-12,

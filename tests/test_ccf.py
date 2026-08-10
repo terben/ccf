@@ -3,9 +3,9 @@ import numpy as np
 import scipy.linalg as sla
 import sympy as sp
 import pytest
-import schurcorr as sc
+import ccf as sc
 
-from schurcorr.symbolic import (
+from ccf.symbolic import (
     admissible_bounds_symbolic,
     pacf_symbolic,
     toeplitz_matrix,
@@ -446,7 +446,7 @@ def test_batched_from_pacf_matches_looped_1d():
     # The batched path is vectorized across rows (a different
     # summation order than the scalar per-row path's np.dot), so this
     # is a tight-tolerance comparison, not exact equality -- see the
-    # Notes in schurcorr.levinson._pacf_2d_fast.
+    # Notes in ccf.levinson._pacf_2d_fast.
     rng = np.random.default_rng(0)
     alpha = _random_batch(rng)
 

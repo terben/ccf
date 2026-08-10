@@ -63,6 +63,6 @@ else:
 try:
     from importlib.metadata import PackageNotFoundError, version
 
-    __version__ = version("schurcorr")
+    __version__ = version("ccf")
 except PackageNotFoundError:
     __version__ = "0+unknown"

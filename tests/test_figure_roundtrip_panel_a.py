@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import schurcorr as sc
+import ccf as sc
 
 PAPER_PLOT_SCRIPTS = Path(__file__).resolve().parent.parent / "paper_plot_scripts"
 if str(PAPER_PLOT_SCRIPTS) not in sys.path:

@@ -21,8 +21,8 @@ Four cases need to be told apart:
 
 All four are read off one quantity: the innovation-variance trace
 `sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the single Levinson
-recursion (`schurcorr.levinson._levinson_correlations_batch`) shared by
-`pacf`, `pacf_status`, `pacf_prefix`, and `schurcorr.bounds`. The sections
+recursion (`ccf.levinson._levinson_correlations_batch`) shared by
+`pacf`, `pacf_status`, `pacf_prefix`, and `ccf.bounds`. The sections
 below are different readings of that one recursion's output, not different
 algorithms.
 
@@ -128,17 +128,17 @@ the other three:
   strictly interior but very close to it, or (rarely) very slightly
   inadmissible.
 
-The float64 path (`schurcorr/levinson.py`) absorbs this with a fixed
+The float64 path (`ccf/levinson.py`) absorbs this with a fixed
 tolerance, `_ROUNDING_TOL = 1e-12`: a computed `sigma_n^2` in
 `(-_ROUNDING_TOL, 0)` is clamped to exactly `0.0`, treated as case 2 rather
-than case 3. `schurcorr.bounds` uses a second, looser tolerance,
+than case 3. `ccf.bounds` uses a second, looser tolerance,
 `_BOUNDARY_CONTINUATION_TOL`, for comparing a *supplied* coefficient
 against its forced continuation -- an order-dependent chain of products
 that amplifies roundoff faster than the single-step comparisons
 `_ROUNDING_TOL` guards. See `DOCUMENTATION.md` ("Tolerances") for why the
 two are kept separate.
 
-The arbitrary-precision path (`schurcorr/precision.py`) lets a caller
+The arbitrary-precision path (`ccf/precision.py`) lets a caller
 resolve this ambiguity directly by increasing the working precision
 (`recommended_dps`) rather than relying on a fixed tolerance.
 

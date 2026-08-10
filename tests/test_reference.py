@@ -1,10 +1,10 @@
-"""Tests for the didactic reference implementation (schurcorr.reference)."""
+"""Tests for the didactic reference implementation (ccf.reference)."""
 
 import numpy as np
 import pytest
 
-import schurcorr as sc
-from schurcorr.reference import from_pacf_reference, pacf_reference
+import ccf as sc
+from ccf.reference import from_pacf_reference, pacf_reference
 
 
 @pytest.mark.parametrize("order", [1, 2, 3, 5, 10, 20])

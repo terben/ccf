@@ -1,9 +1,9 @@
-"""Regression tests for schurcorr.precision (arbitrary-precision path)."""
+"""Regression tests for ccf.precision (arbitrary-precision path)."""
 
 import mpmath as mp
 import pytest
 
-import schurcorr as sc
+import ccf as sc
 
 
 def test_from_pacf_mp_preserves_mpf_precision_beyond_float64():

@@ -7,11 +7,11 @@ import sys
 
 import pytest
 
-import schurcorr as sc
+import ccf as sc
 
 
 def test_version_matches_installed_metadata():
-    assert sc.__version__ == importlib.metadata.version("schurcorr")
+    assert sc.__version__ == importlib.metadata.version("ccf")
 
 
 def test_version_is_single_sourced_from_pyproject():
@@ -49,8 +49,8 @@ def test_import_error_unrelated_to_mpmath_is_not_swallowed(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    monkeypatch.delitem(sys.modules, "schurcorr", raising=False)
-    monkeypatch.delitem(sys.modules, "schurcorr.precision", raising=False)
+    monkeypatch.delitem(sys.modules, "ccf", raising=False)
+    monkeypatch.delitem(sys.modules, "ccf.precision", raising=False)
 
     with pytest.raises(ModuleNotFoundError, match="not_mpmath"):
-        importlib.import_module("schurcorr")
+        importlib.import_module("ccf")

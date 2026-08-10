@@ -45,10 +45,10 @@ the exact index correspondence):
 Numerical tolerances are named after what they guard, not where they
 happen to be used:
 
-- `_ROUNDING_TOL` (`schurcorr/levinson.py`) absorbs float64 roundoff
+- `_ROUNDING_TOL` (`ccf/levinson.py`) absorbs float64 roundoff
   around an exact admissibility or boundary value (e.g. a computed
   `sigma_n^2` that is mathematically zero but lands at `-1e-15`).
-- `_BOUNDARY_CONTINUATION_TOL` (`schurcorr/bounds.py`) is looser: it
+- `_BOUNDARY_CONTINUATION_TOL` (`ccf/bounds.py`) is looser: it
   compares a *supplied* coefficient against the Toeplitz-forced
   continuation computed from it, a chain of products that amplifies
   roundoff faster than the single-step comparisons `_ROUNDING_TOL`

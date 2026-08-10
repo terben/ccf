@@ -6,7 +6,7 @@ Run directly: python examples/pacf_roundtrip.py
 
 import numpy as np
 
-import schurcorr as sc
+import ccf as sc
 
 # An admissible interior sequence: build it from PACF coordinates, whose
 # only constraint is abs(alpha_n) < 1, then recover the correlations.

@@ -1,4 +1,4 @@
-name: schurcorr
+name: ccf
 
 channels:
   - conda-forge

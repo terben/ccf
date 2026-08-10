@@ -13,7 +13,7 @@ FloatArray = NDArray[np.float64]
 
 # Absorbs float64 roundoff around exact admissibility/boundary values (see
 # DOCUMENTATION.md, "Tolerances"); unrelated to
-# schurcorr.bounds._BOUNDARY_CONTINUATION_TOL, which validates
+# ccf.bounds._BOUNDARY_CONTINUATION_TOL, which validates
 # already-computed forced continuations rather than roundoff at the
 # boundary itself.
 _ROUNDING_TOL = 1.0e-12
@@ -79,7 +79,7 @@ class _LevinsonResult:
     prediction: FloatArray
     reached_boundary: bool
     # Terminal predictor coefficients after the last successfully computed
-    # step (interior or boundary); used by schurcorr.bounds for the forced
+    # step (interior or boundary); used by ccf.bounds for the forced
     # continuation and the next-coefficient admissible interval.
     terminal_phi: FloatArray | None = None
 
@@ -112,7 +112,7 @@ def _levinson_correlations_batch(r2d: FloatArray) -> _LevinsonBatchResult:
     """Run the correlation-to-PACF recursion, vectorized across batch rows.
 
     Shared by :func:`pacf` and, via :func:`_run_levinson_from_correlations`,
-    by :func:`pacf_prefix` and :mod:`schurcorr.bounds`. Proceeds each row
+    by :func:`pacf_prefix` and :mod:`ccf.bounds`. Proceeds each row
     as far as the mathematics allows and reports how far via
     ``terminal_order``/``reached_boundary``/``invalid`` rather than raising;
     callers decide what to raise (see ``docs/boundary_semantics.md``).
@@ -223,7 +223,7 @@ def _run_levinson_from_correlations(r: ArrayLike) -> _LevinsonResult:
     """Run the shared correlation-to-PACF recursion for a single sequence.
 
     Thin single-row adapter over :func:`_levinson_correlations_batch`, used
-    by :func:`pacf_prefix` and :mod:`schurcorr.bounds`.
+    by :func:`pacf_prefix` and :mod:`ccf.bounds`.
     """
     r_array = _asarray1d(r, name="r")
     batch = _levinson_correlations_batch(r_array[None, :])
@@ -333,7 +333,7 @@ class PrefixResult:
         Innovation variances ``(sigma_0^2, ..., sigma_order^2)``.
     predictor
         Terminal Levinson--Durbin predictor coefficients at the boundary
-        (see :func:`schurcorr.bounds.extend_at_boundary`), or ``None``
+        (see :func:`ccf.bounds.extend_at_boundary`), or ``None``
         if the boundary was not reached.
     """
 
@@ -368,8 +368,8 @@ def pacf_prefix(r: ArrayLike) -> PrefixResult:
         If inadmissibility (``abs(alpha_n) > 1``) is encountered before a
         boundary is reached. Coefficients supplied past a reached boundary
         are outside the independent PACF prefix and are not validated by
-        this function; use :func:`schurcorr.bounds.check_admissibility` or
-        :func:`schurcorr.bounds.admissible_bounds` to validate the complete
+        this function; use :func:`ccf.bounds.check_admissibility` or
+        :func:`ccf.bounds.admissible_bounds` to validate the complete
         supplied sequence.
     """
     r_array = _asarray1d(r, name="r")
@@ -405,7 +405,7 @@ def pacf(r: ArrayLike) -> FloatArray:
     SingularToeplitzError
         If the recursion reaches a degenerate boundary (``sigma_n^2 =
         0``); use :func:`pacf_prefix` for the boundary-inclusive prefix,
-        or :func:`schurcorr.bounds.extend_at_boundary` for the
+        or :func:`ccf.bounds.extend_at_boundary` for the
         deterministic continuation past it.
     ValueError
         If ``r`` is not an admissible correlation sequence.
@@ -507,8 +507,8 @@ def pacf_status(r: ArrayLike) -> PACFStatus:
     For a sequence that reaches a degenerate boundary, the classification
     describes the recursion up to that first boundary. Coefficients
     supplied beyond the boundary are not validated by ``pacf_status``; use
-    :func:`schurcorr.bounds.check_admissibility` or
-    :func:`schurcorr.bounds.admissible_bounds` when the admissibility of
+    :func:`ccf.bounds.check_admissibility` or
+    :func:`ccf.bounds.admissible_bounds` when the admissibility of
     the complete supplied sequence is required.
     """
     r_array = _asarray_batchable(r, name="r")

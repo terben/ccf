@@ -1,6 +1,6 @@
 """Arbitrary-precision PACF transformations.
 
-Standalone ``mpmath`` counterpart to :mod:`schurcorr.levinson`, for
+Standalone ``mpmath`` counterpart to :mod:`ccf.levinson`, for
 sequences where ``sigma_n^2`` underflows ``float64`` (see
 :func:`recommended_dps`).
 """
@@ -69,7 +69,7 @@ def pacf_mp(
 ) -> list[mp.mpf]:
     """Convert correlations to PACFs using arbitrary precision.
 
-    Arbitrary-precision counterpart to :func:`schurcorr.levinson.pacf`.
+    Arbitrary-precision counterpart to :func:`ccf.levinson.pacf`.
 
     Parameters
     ----------
@@ -100,8 +100,8 @@ def pacf_mp(
 
     Notes
     -----
-    Unlike the ``float64`` path (split into :func:`schurcorr.levinson.pacf`
-    and :func:`schurcorr.levinson.pacf_prefix`), ``at_boundary`` stays a
+    Unlike the ``float64`` path (split into :func:`ccf.levinson.pacf`
+    and :func:`ccf.levinson.pacf_prefix`), ``at_boundary`` stays a
     mode parameter here; see ``docs/development_notes.md`` for why.
     """
     if at_boundary not in ("raise", "warn"):
@@ -180,7 +180,7 @@ def from_pacf_mp(
 ) -> list[mp.mpf]:
     """Convert PACFs to correlations using arbitrary precision.
 
-    Arbitrary-precision counterpart to :func:`schurcorr.levinson.from_pacf`.
+    Arbitrary-precision counterpart to :func:`ccf.levinson.from_pacf`.
 
     Parameters
     ----------

@@ -1,4 +1,4 @@
-# schurcorr
+# ccf
 
 Reference code for "Natural Coordinates for Constrained Correlation
 Functions: Partial Autocorrelations and the Geometry of Positive Power
@@ -17,13 +17,13 @@ reproduction, symbolic verification, arbitrary precision, tests) is
 installed via extras -- see [Optional dependencies](#optional-dependencies).
 
 Alternatively, `./install.sh` sets up a conda environment
-(`schurcorr.yml`) with every optional dependency and runs the test suite.
+(`ccf.yml`) with every optional dependency and runs the test suite.
 
 ## Minimal example
 
 ```python
 import numpy as np
-import schurcorr as sc
+import ccf as sc
 
 alpha = np.array([0.5, -0.3, 0.2])
 r = sc.from_pacf(alpha)
@@ -37,13 +37,13 @@ print(alpha_recovered)
 
 | Concept                | Function                             |
 | ----------------------- | ------------------------------------- |
-| `r -> alpha`            | `schurcorr.pacf`                      |
-| `alpha -> r`            | `schurcorr.from_pacf`                 |
-| boundary analysis       | `schurcorr.pacf_prefix`               |
-| admissible intervals    | `schurcorr.admissible_bounds`         |
-| Fisher coordinates      | `schurcorr.fisher` / `inverse_fisher` |
-| arbitrary precision     | `schurcorr.pacf_mp` / `from_pacf_mp`  |
-| didactic reference form | `schurcorr.reference`                 |
+| `r -> alpha`            | `ccf.pacf`                      |
+| `alpha -> r`            | `ccf.from_pacf`                 |
+| boundary analysis       | `ccf.pacf_prefix`               |
+| admissible intervals    | `ccf.admissible_bounds`         |
+| Fisher coordinates      | `ccf.fisher` / `inverse_fisher` |
+| arbitrary precision     | `ccf.pacf_mp` / `from_pacf_mp`  |
+| didactic reference form | `ccf.reference`                 |
 
 `pacf`, `from_pacf`, `pacf_prefix`, `admissible_bounds`, `fisher`, and
 `inverse_fisher` are the primary API. `check_admissibility`,
@@ -71,15 +71,15 @@ degenerate boundary.
 
 ## Reference implementation
 
-`schurcorr.reference` provides `pacf_reference` and `from_pacf_reference`:
+`ccf.reference` provides `pacf_reference` and `from_pacf_reference`:
 short, single-sequence, loop-based implementations that follow the
 paper's Levinson--Durbin recursion (Eqs. ld_p-ld_sigma) line by line,
 for readers checking the code against the equations. They are not used
-internally; `schurcorr.pacf` / `from_pacf` are the robust, batched,
+internally; `ccf.pacf` / `from_pacf` are the robust, batched,
 boundary-aware implementation used throughout the package and its tests.
 
 ```python
-from schurcorr.reference import pacf_reference, from_pacf_reference
+from ccf.reference import pacf_reference, from_pacf_reference
 ```
 
 ## Reproducing the figures
@@ -101,7 +101,7 @@ execution.
 
 ```bash
 pip install -e ".[plots]"      # matplotlib, scipy -- figure reproduction
-pip install -e ".[symbolic]"   # sympy -- schurcorr.symbolic
+pip install -e ".[symbolic]"   # sympy -- ccf.symbolic
 pip install -e ".[precision]"  # mpmath -- pacf_mp / from_pacf_mp
 pip install -e ".[test]"       # pytest, statsmodels, and all of the above
 pip install -e ".[all]"        # plots + symbolic + precision

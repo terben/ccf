@@ -28,7 +28,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ks_2samp, kurtosis, skew
 
-import schurcorr as sc
+import ccf as sc
 from style import AA_TEXT_WIDTH, aa_plot
 
 # Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
@@ -375,21 +375,21 @@ def main() -> None:
         args.samples, args.grid_points, args.Lk0, rng_direct, args.batch_size
     )
 
-    print("Converting r -> alpha via schurcorr.pacf() ...")
+    print("Converting r -> alpha via ccf.pacf() ...")
     t0 = time.time()
     try:
         alpha_direct = sc.pacf(r_direct)
     except (sc.SingularToeplitzError, ValueError) as error:
         raise RuntimeError(
-            "schurcorr.pacf() could not recover an admissible alpha for "
+            "ccf.pacf() could not recover an admissible alpha for "
             "the full batch -- at least one simulated row left the PACF "
             f"cube. Original error: {error}"
         ) from error
-    print(f"  schurcorr.pacf() on {r_direct.shape}: {time.time() - t0:.2f}s")
+    print(f"  ccf.pacf() on {r_direct.shape}: {time.time() - t0:.2f}s")
 
     max_abs_alpha = float(np.max(np.abs(alpha_direct)))
     print(f"  max |alpha_direct| = {max_abs_alpha:.16g} "
-          "(schurcorr.pacf() guarantees this is < 1 by construction, "
+          "(ccf.pacf() guarantees this is < 1 by construction, "
           "or it would already have raised above)")
     eps = 8.0 * np.finfo(float).eps
     alpha_direct = np.clip(alpha_direct, -1.0 + eps, 1.0 - eps)
@@ -399,10 +399,10 @@ def main() -> None:
     y_transport, _, _ = gaussian_transport(y_direct, rng_transport, args.diagonal_cov)
     alpha_transport = np.tanh(y_transport)
 
-    print("Converting alpha -> r via schurcorr.from_pacf() ...")
+    print("Converting alpha -> r via ccf.from_pacf() ...")
     t0 = time.time()
     r_transport = sc.from_pacf(alpha_transport)
-    print(f"  schurcorr.from_pacf() on {alpha_transport.shape}: "
+    print(f"  ccf.from_pacf() on {alpha_transport.shape}: "
           f"{time.time() - t0:.2f}s")
 
     # Internal roundtrip check catches sign/indexing mistakes in the recursion.

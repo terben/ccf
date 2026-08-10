@@ -14,7 +14,7 @@ from .levinson import (
     pacf,
 )
 
-# Looser than schurcorr.levinson._ROUNDING_TOL by design (see
+# Looser than ccf.levinson._ROUNDING_TOL by design (see
 # DOCUMENTATION.md, "Tolerances"): this compares a *supplied* coefficient
 # against the Toeplitz-forced continuation computed from it, an
 # order-dependent chain of products that amplifies roundoff faster than
@@ -394,7 +394,7 @@ def admissible_volume(N: int) -> float:
     underflows to exactly ``0.0`` in ``float64`` for large ``N``; use
     :func:`log_admissible_volume` instead in that regime, following
     the numerical-robustness convention used elsewhere in the package
-    for products of many factors (see :func:`schurcorr.coordinates.jacobian`
-    / :func:`schurcorr.coordinates.log_jacobian`).
+    for products of many factors (see :func:`ccf.coordinates.jacobian`
+    / :func:`ccf.coordinates.log_jacobian`).
     """
     return float(np.exp(log_admissible_volume(N)))

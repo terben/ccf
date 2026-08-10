@@ -2,7 +2,7 @@
 Levinson-Durbin recursion, Sect. 5.2.
 
 Panel A: float64 failure rate (SingularToeplitzError or ValueError from
-schurcorr.pacf) vs. N, for alpha drawn independently and uniformly from
+ccf.pacf) vs. N, for alpha drawn independently and uniformly from
 (-b, b)^N, b in {0.9, 0.95}.
 
 Panel B: arbitrary-precision (mpmath) roundtrip error
@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 import mpmath as mp
 import numpy as np
 
-import schurcorr as sc
+import ccf as sc
 from style import aa_plot
 
 DEFAULT_JOBS = min(8, os.cpu_count() or 1)
@@ -102,7 +102,7 @@ def failure_rate_scan(
     """Panel A data: fraction of admissibility failures over `trials`
     draws, for each (bound, N).
 
-    Trials are processed in chunks because schurcorr's NumPy recursion is
+    Trials are processed in chunks because ccf's NumPy recursion is
     vectorized across samples; calling the NumPy Levinson recursions once
     per trial would spend most of the runtime in per-call Python/NumPy
     dispatch overhead rather than the O(N) arithmetic itself.
