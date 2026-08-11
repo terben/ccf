@@ -1,16 +1,21 @@
 cff-version: 1.2.0
 
-title: ccf
+message: >
+  If you use this software in scientific work, please cite the software
+  and the accompanying paper.
+
+title: "ccf: Partial autocorrelations and natural coordinates for correlation functions"
+
+type: software
 
 authors:
-  - family-names: Erben
-    given-names: Thomas
+  - family-names: "Erben"
+    given-names: "Thomas"
+    orcid: "https://orcid.org/0009-0000-6513-0250"
+    affiliation: "Argelander-Institut für Astronomie, Universität Bonn"
 
-version: 1.0.0
+version: "1.0.0"
+
+repository-code: "https://github.com/terben/ccf"
 
 license: BSD-3-Clause
-
-doi: 10.5281/zenodo.PLACEHOLDER
-
-message: >
-  If you use this software, please cite the accompanying paper.
