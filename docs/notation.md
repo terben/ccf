@@ -15,9 +15,10 @@ than repeated in individual docstrings.
 
 `sigma2` arrays in the code are documented as `(sigma_0^2, ..., sigma_N^2)`
 -- one entry longer than `alpha`, with `sigma2[0] = 1.0` as a fixed prior
-value. The paper instead starts its recursion at `sigma_1^2 = 1` (Eq.
-ld_recursion). These are the same number at the same array position, just
-named one index apart:
+value. The companion paper instead starts its recursion at
+`sigma_1^2 = 1` and gives the residual-variance recursion in Eq. (19d).
+These are the same quantities at the same array positions, just named one
+index apart:
 
 ```
 code sigma2[k]  ==  paper sigma_(k+1)^2   for k = 0, ..., N

@@ -1,6 +1,6 @@
 """Didactic reference implementation of the r <-> alpha bijection.
 
-Follows Eqs. (ld_p)-(ld_sigma) of the paper line by line, for a single
+Follows Eqs. (19a)--(19d) of the companion paper line by line, for a
 one-dimensional sequence. See :mod:`ccf.levinson` for the batched,
 boundary-aware implementation used by the rest of the package; see
 ``docs/notation.md`` for the index correspondence between ``sigma2`` here
@@ -29,7 +29,7 @@ def pacf_reference(r: ArrayLike) -> FloatArray:
     """Convert correlation coefficients to partial autocorrelations.
 
     Direct, unoptimized implementation of the forward Levinson--Durbin
-    recursion (Eqs. ld_p-ld_sigma) for an admissible interior sequence.
+    recursion (Eqs. (19a)--(19d)) for an admissible interior sequence.
 
     Parameters
     ----------

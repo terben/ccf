@@ -72,8 +72,9 @@ unconditionally -- no exception, no warning.
 r_m` is positive semidefinite but singular. If further coefficients
 `r_{m+1}, ..., r_N` are supplied, they are not free: they are uniquely
 forced by the null vector of that singular matrix, and a valid admissible
-sequence must equal the forced continuation (see `SH_research_note.pdf` and
-the `extend_at_boundary` docstring for the derivation).
+sequence must equal the forced continuation (see Erben (2026),
+doi:10.3847/2515-5172/ae83ae, and the `extend_at_boundary` docstring for
+the derivation).
 
 The consequence for the API: `alpha_1, ..., alpha_{m-1}`, together with the
 forced `alpha_m = +-1`, remain well defined, but there is no `r <-> alpha`

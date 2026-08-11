@@ -171,8 +171,9 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     -----
     The continuation is the unique linear recurrence forced by the null
     vector of the singular Toeplitz matrix at the boundary, given by the
-    terminal Levinson--Durbin predictor; see Sect. 5 of the paper and
-    ``SH_research_note.pdf`` for the derivation.
+    terminal Levinson--Durbin predictor; see Sect. 4.6 of the companion
+    paper and Erben (2026), doi:10.3847/2515-5172/ae83ae, for the
+    derivation of the forced recurrence.
     """
     if n_extra < 0:
         raise ValueError("n_extra must be non-negative.")
@@ -327,8 +328,8 @@ def log_admissible_volume(N: int) -> float:
     -------
     float
         ``log(V_N)``, the natural logarithm of the Lebesgue volume of
-        the admissible region in ``r``-space (Eq. (volume), Sect. 6.1
-        of the paper).
+        the admissible region in ``r``-space (Eq. (26), Sect. 4.5
+        of the companion paper).
 
     Raises
     ------
@@ -346,9 +347,9 @@ def log_admissible_volume(N: int) -> float:
 
     References
     ----------
-    Erben (in preparation), Eq. (volume), Sect. 6.1; the SH-normalized
-    volume ``V_N^SH = V_N / 2^N`` (Eq. (volume_SH)) is cross-checked
-    in the test suite.
+    Companion paper, Sect. 4.5, Eq. (26); the SH-normalized volume
+    ``V_N^SH = V_N / 2^N`` (Eq. (27)) is cross-checked in the test
+    suite.
     """
     if N < 1 or N != int(N):
         raise ValueError(f"N must be a positive integer; got {N!r}.")
@@ -378,7 +379,7 @@ def admissible_volume(N: int) -> float:
     Returns
     -------
     float
-        ``V_N`` (Eq. (volume), Sect. 6.1 of the paper),
+        ``V_N`` (Eq. (26), Sect. 4.5 of the companion paper),
 
         ``V_N = 2 * prod_(j=1)^(N-1) sqrt(pi) * j! / Gamma(j + 3/2)``.
 
