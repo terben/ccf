@@ -14,9 +14,7 @@ Run:
     python paper_plot_scripts/figure_roundtrip.py --paper
 
 --quick uses small sample counts for a fast functional check; --paper
-(the default) uses the publication sample counts. See
-docs/development_notes.md for why a third, O(N^2)-timing panel is not
-included.
+(the default) uses the publication sample counts.
 
 Writes: figs/fig_2_roundtrip.pdf
 """
@@ -48,7 +46,7 @@ FIGDIR.mkdir(exist_ok=True)
 BOUNDS = (0.9, 0.95)
 BOUND_COLORS = {0.9: "tab:blue", 0.95: "tab:red"}
 
-# Panel A trial chunk size; see failure_rate_scan and docs/development_notes.md.
+# Panel A trial chunk size; see failure_rate_scan.
 TRIAL_BATCH_SIZE = 1_000
 
 # Publication sample sizes (--paper, the default).

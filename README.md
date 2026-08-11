@@ -168,7 +168,7 @@ BSD 3-Clause License.
 
 ## Development note
 
-Parts of the code, documentation, tests, and API design were developed
+Parts of the AI design, code, documentation, and tests were developed
 with the assistance of ChatGPT (OpenAI) and Claude Code (Anthropic).
 
 The mathematical concepts, algorithms, and overall project design were

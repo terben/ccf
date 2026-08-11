@@ -45,8 +45,7 @@ def recommended_dps(
     Notes
     -----
     This is an empirical recommendation for roundtrip calculations, not a
-    mathematically guaranteed minimum precision; see
-    ``docs/development_notes.md`` for the calibration.
+    mathematically guaranteed minimum precision.
     """
     if n_max < 1 or n_max != int(n_max):
         raise ValueError(f"n_max must be a positive integer; got {n_max!r}.")
@@ -56,8 +55,7 @@ def recommended_dps(
             f"safety_margin must be non-negative; got {safety_margin!r}."
         )
 
-    # 0.45 dps/lag: empirical conditioning loss for alpha in (-0.95, 0.95);
-    # see docs/development_notes.md.
+    # 0.45 dps/lag: empirical conditioning loss for alpha in (-0.95, 0.95)
     return math.ceil(0.45 * n_max) + abs(target_exponent) + safety_margin
 
 
@@ -102,7 +100,7 @@ def pacf_mp(
     -----
     Unlike the ``float64`` path (split into :func:`ccf.levinson.pacf`
     and :func:`ccf.levinson.pacf_prefix`), ``at_boundary`` stays a
-    mode parameter here; see ``docs/development_notes.md`` for why.
+    mode parameter here.
     """
     if at_boundary not in ("raise", "warn"):
         raise ValueError(
