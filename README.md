@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21890866.svg)](https://doi.org/10.5281/zenodo.21890866)
 
-`ccf` is the companion Python package for *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*.
+`ccf` is the reference implementation accompanying the paper *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*.
 
 It provides the numerical tools used in the paper and a small API for experimenting with constrained correlation functions, partial autocorrelations, admissibility bounds, and Fisher coordinates.
 
@@ -12,7 +12,7 @@ $$
 r \quad\longleftrightarrow\quad \alpha \quad\longleftrightarrow\quad y,
 $$
 
-where `r` denotes correlation coefficients, `alpha` partial autocorrelations, and `y` Fisher coordinates.
+where $r=(r_1,\ldots,r_N)$ denotes the correlation coefficients, $\alpha=(\alpha_1,\ldots,\alpha_N)$ the corresponding partial autocorrelations, and $y=(y_1,\ldots,y_N)$ their Fisher coordinates.
 
 ## Installation
 
@@ -28,13 +28,13 @@ The core package depends only on NumPy.
 
 Optional dependencies for figure reproduction, symbolic calculations, arbitrary-precision arithmetic, and testing can be installed separately; see [Optional dependencies](#optional-dependencies).
 
-Alternatively, `./install.sh` sets up the complete conda environment from `ccf.yml` and runs the test suite.
+Alternatively, if Conda is available, `./install.sh` creates the complete conda environment from `ccf.yml` and runs the test suite.
 
 ## Quick start
 
 ### Generate an admissible correlation sequence
 
-Any sequence of partial autocorrelations with `abs(alpha) < 1` defines an interior point of the admissible region:
+Any finite sequence of partial autocorrelations satisfying $|\alpha_k| < 1$ for every $k$ defines an interior point of the corresponding admissible correlation region:
 
 ```python id="z03wzv"
 import numpy as np
@@ -55,7 +55,7 @@ print(alpha_recovered)
 
 ### Inspect the admissible bounds
 
-For a sequence containing (r_1,\ldots,r_N), `admissible_bounds` returns the admissible intervals for the supplied coefficients and, as the final entry, the interval for (r_{N+1}):
+For a sequence containing $r_1,\ldots,r_N$, `admissible_bounds` returns the admissible intervals for the supplied coefficients and, as the final entry, the interval for $r_{N+1}$:
 
 ```python id="eqxux7"
 lower, upper = ccf.admissible_bounds(r)
@@ -96,12 +96,12 @@ The extended API provides diagnostics and boundary handling (`pacf_status`, `pac
 For a more extensive executable walkthrough, see
 
 ```text id="t5ndvg"
-examples/ccf_api_tutorial.py
+[`examples/ccf_api_tutorial.py`](examples/ccf_api_tutorial.py)
 ```
 
 The tutorial is a VS Code / Spyder notebook-style Python script that can be run as a normal script or explored cell by cell. It covers the main transformations as well as batch operations, boundary cases, admissible intervals, Fisher coordinates, Jacobians, arbitrary precision, and symbolic checks.
 
-For mathematical derivations, refer to the paper. The files `docs/notation.md` and `docs/boundary_semantics.md` document the exact correspondence between paper notation and code conventions and the treatment of degenerate boundary sequences.
+For mathematical derivations, refer to the paper. The files [`docs/notation.md`](docs/notation.md) and [`docs/boundary_semantics.md`](docs/boundary_semantics.md) document the exact correspondence between paper notation and code conventions and the treatment of degenerate boundary sequences.
 
 ## Reference implementation
 
@@ -111,12 +111,11 @@ For readers who want to compare the implementation directly with the equations i
 from ccf.reference import pacf_reference, from_pacf_reference
 ```
 
-These are short, single-sequence implementations that follow the Levinson–Durbin recursion in the paper line by line. The main `ccf.pacf` and `ccf.from_pacf` functions are the robust, batched, boundary-aware implementations used by the package.
+These are short, single-sequence implementations that closely follow the Levinson–Durbin recursion in the paper. The main `ccf.pacf` and `ccf.from_pacf` functions are the robust, batched, boundary-aware implementations used by the package.
 
 ## Reproducing the paper figures
 
-Reproducing the publication figures requires a working LaTeX
-installation including the `amsmath` and `siunitx` packages.
+The plotting scripts use LaTeX for publication-quality text rendering and therefore require a working LaTeX installation including the `amsmath` and `siunitx` packages.
 
 For a quick reproduction of the numerical figures:
 
@@ -161,7 +160,7 @@ pytest
 
 If you use `ccf` in scientific work, please cite the software and the companion paper:
 
-> T. Erben (2026), *ccf: Partial autocorrelations and natural coordinates for correlation functions*, version 1.0.0. Zenodo. https://doi.org/10.5281/zenodo.21890866
+> T. Erben (2026), *ccf: Partial autocorrelations and natural coordinates for correlation functions*, version 1.0.0. Zenodo. [doi:10.5281/zenodo.21890866](https://doi.org/10.5281/zenodo.21890866)
 
 and
 
@@ -177,7 +176,7 @@ BSD 3-Clause License.
 
 ## Development note
 
-Parts of the AI design, code, documentation, and tests were developed
+Parts of the API design, code, documentation, and tests were developed
 with the assistance of ChatGPT (OpenAI) and Claude Code (Anthropic).
 
 The mathematical concepts, algorithms, and overall project design were
