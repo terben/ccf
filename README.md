@@ -113,6 +113,9 @@ These are short, single-sequence implementations that follow the Levinson–Durb
 
 ## Reproducing the paper figures
 
+Reproducing the publication figures requires a working LaTeX
+installation including the `amsmath` and `siunitx` packages.
+
 For a quick reproduction of the numerical figures:
 
 ```bash id="kmzq40"
