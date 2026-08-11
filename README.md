@@ -1,5 +1,7 @@
 # ccf — Constrained Correlation Functions
 
+[![DOI](https://zenodo.org/badge/1297701586.svg)](https://doi.org/10.5281/zenodo.21890865)
+
 `ccf` is the companion Python package for *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*.
 
 It provides the numerical tools used in the paper and a small API for experimenting with constrained correlation functions, partial autocorrelations, admissibility bounds, and Fisher coordinates.
@@ -158,6 +160,10 @@ pytest
 ## Citation
 
 If you use `ccf` in scientific work, please cite the software and the companion paper:
+
+> T. Erben (2026), *ccf: Partial autocorrelations and natural coordinates for correlation functions*, version 1.0.0. Zenodo. https://doi.org/10.5281/zenodo.21890866
+
+and
 
 > T. Erben, *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*, in preparation.
 
