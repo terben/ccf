@@ -14,8 +14,8 @@ from .levinson import (
     pacf,
 )
 
-# Looser than ccf.levinson._ROUNDING_TOL by design (see
-# DOCUMENTATION.md, "Tolerances"): this compares a *supplied* coefficient
+# Looser than ccf.levinson._ROUNDING_TOL by design.
+# This compares a *supplied* coefficient
 # against the Toeplitz-forced continuation computed from it, an
 # order-dependent chain of products that amplifies roundoff faster than
 # the single-step comparisons _ROUNDING_TOL is used for.

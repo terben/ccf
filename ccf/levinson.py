@@ -11,9 +11,8 @@ from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
 
-# Absorbs float64 roundoff around exact admissibility/boundary values (see
-# DOCUMENTATION.md, "Tolerances"); unrelated to
-# ccf.bounds._BOUNDARY_CONTINUATION_TOL, which validates
+# Absorbs float64 roundoff around exact admissibility/boundary values;
+# unrelated to ccf.bounds._BOUNDARY_CONTINUATION_TOL, which validates
 # already-computed forced continuations rather than roundoff at the
 # boundary itself.
 _ROUNDING_TOL = 1.0e-12

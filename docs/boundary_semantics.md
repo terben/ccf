@@ -136,8 +136,7 @@ than case 3. `ccf.bounds` uses a second, looser tolerance,
 `_BOUNDARY_CONTINUATION_TOL`, for comparing a *supplied* coefficient
 against its forced continuation -- an order-dependent chain of products
 that amplifies roundoff faster than the single-step comparisons
-`_ROUNDING_TOL` guards. See `DOCUMENTATION.md` ("Tolerances") for why the
-two are kept separate.
+`_ROUNDING_TOL` guards.
 
 The arbitrary-precision path (`ccf/precision.py`) lets a caller
 resolve this ambiguity directly by increasing the working precision

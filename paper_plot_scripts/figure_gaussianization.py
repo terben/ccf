@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
                    default=FIGDIR / "fig_3_gaussianisation.pdf",
                    help="output PDF path (default: ../figs/fig_3_gaussianisation.pdf)")
     p.add_argument("--png", action="store_true",
-                   help="do not also write a PNG preview")
+                   help="also write a PNG preview")
     p.add_argument(
         "--stats-table", type=Path, default=None, metavar="FILE",
         help=("write the numerical inset information to a standalone LaTeX "

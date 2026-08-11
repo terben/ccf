@@ -17,7 +17,7 @@ where `r` denotes correlation coefficients, `alpha` partial autocorrelations, an
 Clone the repository and install the package in editable mode:
 
 ```bash id="g0sj0j"
-git clone <repository-url>
+git clone https://github.com/terben/ccf.git
 cd ccf
 pip install -e .
 ```
@@ -154,7 +154,7 @@ pytest
 
 ## Citation
 
-If you use `ccf` in scientific work, please cite the companion paper:
+If you use `ccf` in scientific work, please cite the software and the companion paper:
 
 > T. Erben, *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*, in preparation.
 
