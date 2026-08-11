@@ -1,6 +1,6 @@
 # ccf — Constrained Correlation Functions
 
-[![DOI](https://zenodo.org/badge/1297701586.svg)](https://doi.org/10.5281/zenodo.21890865)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21890866.svg)](https://doi.org/10.5281/zenodo.21890866)
 
 `ccf` is the companion Python package for *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*.
 
