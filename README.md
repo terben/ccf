@@ -28,7 +28,11 @@ The core package depends only on NumPy.
 
 Optional dependencies for figure reproduction, symbolic calculations, arbitrary-precision arithmetic, and testing can be installed separately; see [Optional dependencies](#optional-dependencies).
 
-Alternatively, if Conda is available, `./install.sh` creates the complete conda environment from `ccf.yml` and runs the test suite.
+Alternatively, if Conda is available, set up the complete development environment and run the test suite with
+
+```bash
+./install.sh
+```
 
 ## Quick start
 
