@@ -95,9 +95,7 @@ The extended API provides diagnostics and boundary handling (`pacf_status`, `pac
 
 For a more extensive executable walkthrough, see
 
-```text id="t5ndvg"
 [`examples/ccf_api_tutorial.py`](examples/ccf_api_tutorial.py)
-```
 
 The tutorial is a VS Code / Spyder notebook-style Python script that can be run as a normal script or explored cell by cell. It covers the main transformations as well as batch operations, boundary cases, admissible intervals, Fisher coordinates, Jacobians, arbitrary precision, and symbolic checks.
 
@@ -117,7 +115,7 @@ These are short, single-sequence implementations that closely follow the Levinso
 
 The plotting scripts use LaTeX for publication-quality text rendering and therefore require a working LaTeX installation including the `amsmath` and `siunitx` packages.
 
-For a quick reproduction of the numerical figures:
+For a quick reproduction of all three numerical figures:
 
 ```bash id="kmzq40"
 python paper_plot_scripts/figure_geometry.py
@@ -134,17 +132,17 @@ For `figure_roundtrip.py`, use `-j` / `--jobs` to control the number of worker p
 The NumPy-based core is installed with
 
 ```bash id="z9kcyz"
-pip install -e .
+python -m pip install -e .
 ```
 
 Additional functionality is available through extras:
 
 ```bash id="s4ipz6"
-pip install -e ".[plots]"      # matplotlib, scipy — figure reproduction
-pip install -e ".[symbolic]"   # sympy — symbolic checks
-pip install -e ".[precision]"  # mpmath — arbitrary precision
-pip install -e ".[test]"       # pytest, statsmodels, and all of the above
-pip install -e ".[all]"        # plots + symbolic + precision
+python -m pip install -e ".[plots]"      # matplotlib, scipy — figure reproduction
+python -m pip install -e ".[symbolic]"   # sympy — symbolic checks
+python -m pip install -e ".[precision]"  # mpmath — arbitrary precision
+python -m pip install -e ".[test]"       # pytest, statsmodels, and all of the above
+python -m pip install -e ".[all]"        # plots + symbolic + precision
 ```
 
 At high order or close to the boundary of the admissible region, the Levinson–Durbin recursion can become ill-conditioned in `float64`. For such cases, `ccf.pacf_mp` and `ccf.from_pacf_mp` provide arbitrary-precision alternatives; `ccf.recommended_dps` gives a suitable working precision.
