@@ -177,6 +177,39 @@ def smooth_hist_density(x: np.ndarray, edges: np.ndarray, smooth: float) -> np.n
     norm = np.sum(h * widths)
     return h / norm if norm > 0 else h
 
+def residual_sampling_band(
+    p_dir: np.ndarray,
+    p_trs: np.ndarray,
+    edges: np.ndarray,
+    n_samples: int,
+    smooth: float,
+) -> np.ndarray:
+    """Pointwise ±1σ sampling band of the plotted density residual.
+
+    The residual plotted in the lower row is
+        (tilde p_trs - tilde p_dir) / max(tilde p_dir),
+    where the tilde denotes Gaussian-smoothed histogram density
+    estimates from M i.i.d. samples in bins of width Delta.
+
+    For a smoothing kernel of width sigma_s bins, the variance of a
+    single smoothed estimate at density value p(r) is approximately
+        Var(tilde p(r)) ~= p(r) / (M * Delta) * 1/(2 sqrt(pi) sigma_s),
+    (binomial bin variance reduced by the sum of squared Gaussian
+    kernel weights).  The direct and transport histograms are drawn
+    from independent RNGs, so their variances add, giving
+        sigma_res(r) = sqrt((p_dir(r) + p_trs(r)) /
+                             (2 sqrt(pi) sigma_s M Delta)).
+    The returned band is sigma_res(r) / max(p_dir), matching the
+    normalisation of the plotted residual.
+    """
+    delta = float(np.mean(np.diff(edges)))
+    reduction = 1.0 / (2.0 * np.sqrt(np.pi) * smooth) if smooth > 0 else 1.0
+    var_sum = (np.clip(p_dir, 0.0, None) + np.clip(p_trs, 0.0, None)) \
+              * reduction / (n_samples * delta)
+    sigma_res = np.sqrt(var_sum)
+    peak = float(np.max(p_dir))
+    return sigma_res / peak if peak > 0 else sigma_res
+
 
 def moments(x: np.ndarray) -> Tuple[float, float]:
     return float(skew(x, bias=False)), float(kurtosis(x, fisher=True, bias=False))
@@ -339,14 +372,24 @@ def make_figure(
             )
 
         axr = axes[1, col]
+        band = residual_sampling_band(
+            dd, dt, edges, r_direct.shape[0], smooth,
+        )
+        axr.fill_between(
+            centers, -band, band,
+            color="0.80", alpha=0.55, linewidth=0,
+            label=(r"$\pm 1\sigma$ sampling" if col == 0 else None),
+        )
         axr.axhline(0.0, lw=REFERENCE_LINEWIDTH, color="0.35")
         axr.plot(centers, residual, lw=SECONDARY_LINEWIDTH)
         axr.tick_params(direction="in", top=True, right=True)
         axr.set_xlabel(rf"$r_{lag}$")
-        lim = max(0.012, 1.08 * np.max(np.abs(residual)))
+        lim = max(0.012,
+                  1.08 * max(np.max(np.abs(residual)), float(np.max(band))))
         axr.set_ylim(-lim, lim)
         if col == 0:
             axr.set_ylabel(r"$(p_{\rm trs}-p_{\rm dir})/\max p_{\rm dir}$")
+            axr.legend(loc="upper left", frameon=False, fontsize=7)
 
     # Manual margins give a compact and stable 3-column layout.  A global
     # title is intentionally omitted; the caption carries that information.
