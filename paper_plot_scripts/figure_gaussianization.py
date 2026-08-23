@@ -184,24 +184,28 @@ def residual_sampling_band(
     n_samples: int,
     smooth: float,
 ) -> np.ndarray:
-    """Pointwise ±1σ sampling band of the plotted density residual.
+    """Approximate pointwise histogram-noise scale of the plotted
+    density residual.
 
-    The residual plotted in the lower row is
-        (tilde p_trs - tilde p_dir) / max(tilde p_dir),
-    where the tilde denotes Gaussian-smoothed histogram density
-    estimates from M i.i.d. samples in bins of width Delta.
+    The residual plotted in the lower row is (tilde p_trs - tilde
+    p_dir) / max(tilde p_dir), where the tilde denotes
+    Gaussian-smoothed histogram density estimates from M samples in
+    bins of width Delta.
 
     For a smoothing kernel of width sigma_s bins, the variance of a
-    single smoothed estimate at density value p(r) is approximately
-        Var(tilde p(r)) ~= p(r) / (M * Delta) * 1/(2 sqrt(pi) sigma_s),
-    (binomial bin variance reduced by the sum of squared Gaussian
-    kernel weights).  The direct and transport histograms are drawn
-    from independent RNGs, so their variances add, giving
-        sigma_res(r) = sqrt((p_dir(r) + p_trs(r)) /
-                             (2 sqrt(pi) sigma_s M Delta)).
-    The returned band is sigma_res(r) / max(p_dir), matching the
-    normalisation of the plotted residual.
+    single smoothed estimate at density value p(r) is approximated by
+    Var(tilde p(r)) ~= p(r) / (M * Delta) * 1/(2 sqrt(pi) sigma_s),
+    corresponding to the bin-counting variance reduced by the sum of
+    squared Gaussian kernel weights.  As a reference noise scale, we add
+    the counting-noise variances of the direct and transport histograms,
+    neglecting the dependence induced by estimating the transport model
+    from the direct sample: sigma_res(r) = sqrt((p_dir(r) + p_trs(r)) / (2
+    sqrt(pi) sigma_s M Delta)).  The returned band is sigma_res(r) /
+    max(p_dir), matching the normalisation of the plotted residual.  It is
+    intended as an approximate histogram-noise scale, not as a calibrated
+    confidence interval.
     """
+
     delta = float(np.mean(np.diff(edges)))
     reduction = 1.0 / (2.0 * np.sqrt(np.pi) * smooth) if smooth > 0 else 1.0
     var_sum = (np.clip(p_dir, 0.0, None) + np.clip(p_trs, 0.0, None)) \
