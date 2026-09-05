@@ -10,7 +10,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from pathlib import Path
 
-from style import aa_plot
+from style import oja_plot
 
 # Optional titles -- set to None to disable.
 TOP_TITLE = None
@@ -346,7 +346,7 @@ def _plot_order_three_slices(axes_bot):
 
 def make_figure():
     """Build the combined admissible-region figure and return it."""
-    aa_plot(column="double", height_ratio=0.70, fontsize=8.0, use_tex=True)
+    oja_plot(column="double", height_ratio=0.70, fontsize=8.0, use_tex=True)
     plt.rcParams["figure.constrained_layout.w_pad"] = 0.01
     plt.rcParams["figure.constrained_layout.h_pad"] = 0.01
 

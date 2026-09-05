@@ -29,11 +29,11 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ks_2samp, kurtosis, skew
 
 import ccf
-from style import AA_TEXT_WIDTH, aa_plot
+from style import oja_plot
 
 # Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
-# The full figure width is taken from aa_plot; only the height ratio is set here.
-aa_plot(
+# The full figure width is taken from oja_plot; only the height ratio is set here.
+oja_plot(
     column="double",
     height_ratio=0.52,
     fontsize=8.0,
@@ -49,7 +49,7 @@ plt.rcParams["savefig.bbox"] = None
 # Line-width hierarchy matched to Fig. 1:
 #   2.2 pt: principal comparison curves (Fig. 1 boundaries)
 #   1.3 pt: secondary/diagnostic curves (Fig. 1 guide curves)
-#   0.8 pt: neutral reference lines and axes (aa_plot default)
+#   0.8 pt: neutral reference lines and axes (oja_plot default)
 MAIN_LINEWIDTH = 2.2
 SECONDARY_LINEWIDTH = 1.3
 REFERENCE_LINEWIDTH = 0.8
@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
                    default=FIGDIR / "fig_3_gaussianisation.pdf",
                    help="output PDF path (default: ../figs/fig_3_gaussianisation.pdf)")
     p.add_argument("--png", action="store_true",
-                   help="do not also write a PNG preview")
+                   help="also write a PNG preview")
     p.add_argument(
         "--stats-table", type=Path, default=None, metavar="FILE",
         help=("write the numerical inset information to a standalone LaTeX "
@@ -176,6 +176,43 @@ def smooth_hist_density(x: np.ndarray, edges: np.ndarray, smooth: float) -> np.n
     widths = np.diff(edges)
     norm = np.sum(h * widths)
     return h / norm if norm > 0 else h
+
+def residual_sampling_band(
+    p_dir: np.ndarray,
+    p_trs: np.ndarray,
+    edges: np.ndarray,
+    n_samples: int,
+    smooth: float,
+) -> np.ndarray:
+    """Approximate pointwise histogram-noise scale of the plotted
+    density residual.
+
+    The residual plotted in the lower row is (tilde p_trs - tilde
+    p_dir) / max(tilde p_dir), where the tilde denotes
+    Gaussian-smoothed histogram density estimates from M samples in
+    bins of width Delta.
+
+    For a smoothing kernel of width sigma_s bins, the variance of a
+    single smoothed estimate at density value p(r) is approximated by
+    Var(tilde p(r)) ~= p(r) / (M * Delta) * 1/(2 sqrt(pi) sigma_s),
+    corresponding to the bin-counting variance reduced by the sum of
+    squared Gaussian kernel weights.  As a reference noise scale, we add
+    the counting-noise variances of the direct and transport histograms,
+    neglecting the dependence induced by estimating the transport model
+    from the direct sample: sigma_res(r) = sqrt((p_dir(r) + p_trs(r)) / (2
+    sqrt(pi) sigma_s M Delta)).  The returned band is sigma_res(r) /
+    max(p_dir), matching the normalisation of the plotted residual.  It is
+    intended as an approximate histogram-noise scale, not as a calibrated
+    confidence interval.
+    """
+
+    delta = float(np.mean(np.diff(edges)))
+    reduction = 1.0 / (2.0 * np.sqrt(np.pi) * smooth) if smooth > 0 else 1.0
+    var_sum = (np.clip(p_dir, 0.0, None) + np.clip(p_trs, 0.0, None)) \
+              * reduction / (n_samples * delta)
+    sigma_res = np.sqrt(var_sum)
+    peak = float(np.max(p_dir))
+    return sigma_res / peak if peak > 0 else sigma_res
 
 
 def moments(x: np.ndarray) -> Tuple[float, float]:
@@ -285,7 +322,7 @@ def make_figure(
     fig, axes = plt.subplots(
         2,
         3,
-        figsize=(AA_TEXT_WIDTH, AA_TEXT_WIDTH * height_ratio),
+        figsize=(plt.rcParams["figure.figsize"][0], plt.rcParams["figure.figsize"][0] * height_ratio),
         sharex="col",
         gridspec_kw={
             "height_ratios": height_ratios,
@@ -339,14 +376,24 @@ def make_figure(
             )
 
         axr = axes[1, col]
+        band = residual_sampling_band(
+            dd, dt, edges, r_direct.shape[0], smooth,
+        )
+        axr.fill_between(
+            centers, -band, band,
+            color="0.80", alpha=0.55, linewidth=0,
+            label=(r"$\pm 1\sigma$ sampling" if col == 0 else None),
+        )
         axr.axhline(0.0, lw=REFERENCE_LINEWIDTH, color="0.35")
         axr.plot(centers, residual, lw=SECONDARY_LINEWIDTH)
         axr.tick_params(direction="in", top=True, right=True)
         axr.set_xlabel(rf"$r_{lag}$")
-        lim = max(0.012, 1.08 * np.max(np.abs(residual)))
+        lim = max(0.012,
+                  1.08 * max(np.max(np.abs(residual)), float(np.max(band))))
         axr.set_ylim(-lim, lim)
         if col == 0:
             axr.set_ylabel(r"$(p_{\rm trs}-p_{\rm dir})/\max p_{\rm dir}$")
+            axr.legend(loc="upper left", frameon=False, fontsize=7)
 
     # Manual margins give a compact and stable 3-column layout.  A global
     # title is intentionally omitted; the caption carries that information.

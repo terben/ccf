@@ -1,18 +1,16 @@
 r"""Matplotlib configuration used by the paper figure scripts.
 
-The dimensions are derived from the A&A ``aa.cls`` layout:
-
-* full text width: 184 mm
-* column separation: 4 mm
-* single-column width: 90 mm
+This module provides a generalized framework for scientific plots in astronomy,
+supporting multiple journal layouts (e.g., A&A, OJA) via a central configuration.
 
 Typical use
 -----------
 
     import matplotlib.pyplot as plt
-    from style import aa_plot
+    from style import set_plot_style
 
-    aa_plot(column="single")
+    # Set style for Astronomy & Astrophysics single column
+    set_plot_style(journal="aa", column="single")
     fig, ax = plt.subplots()
     ax.plot(x, y)
     ax.set_xlabel(r"Time ($\mathrm{s}$)")
@@ -21,60 +19,80 @@ Typical use
 
 Use ``revert_params()`` to restore the Matplotlib configuration that was
 active when this module was imported. For temporary settings, use
-``aa_style()`` as a context manager.
+``style_context()`` as a context manager.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Iterator, Literal
 
 import matplotlib
 
 MM_PER_INCH = 25.4
-AA_TEXT_WIDTH_MM = 184.0
-AA_COLUMN_SEP_MM = 4.0
-AA_COLUMN_WIDTH_MM = (AA_TEXT_WIDTH_MM - AA_COLUMN_SEP_MM) / 2.0
-
-AA_TEXT_WIDTH = AA_TEXT_WIDTH_MM / MM_PER_INCH
-AA_COLUMN_WIDTH = AA_COLUMN_WIDTH_MM / MM_PER_INCH
-
 GOLDEN_RATIO = (5.0**0.5 - 1.0) / 2.0
+
+@dataclass(frozen=True)
+class JournalConfig:
+    """Encapsulates journal-specific layout dimensions."""
+    name: str
+    text_width_in: float
+    column_sep_in: float
+    default_fontsize: float = 8.0
+
+# Central Registry for journal configurations
+JOURNAL_REGISTRY: dict[str, JournalConfig] = {
+    "aa": JournalConfig(
+        name="Astronomy & Astrophysics",
+        text_width_in=184.0 / MM_PER_INCH,
+        column_sep_in=4.0 / MM_PER_INCH,
+        default_fontsize=8.0,
+    ),
+    "oja": JournalConfig(
+        name="Open Journal of Astronomy",
+        text_width_in=7.1,
+        column_sep_in=0.3125,
+        default_fontsize=8.0,
+    ),
+}
 
 # Store the configuration that was active when this module was imported.
 ORIGINAL_MATPLOTLIB_CONFIG = matplotlib.rcParams.copy()
 
 
-def _figure_width(column: Literal["single", "double"]) -> float:
-    """Return the A&A figure width in inches."""
-    if column == "single":
-        return AA_COLUMN_WIDTH
+def _calculate_figure_width(config: JournalConfig, column: Literal["single", "double"]) -> float:
+    """Calculate the figure width in inches based on journal config and column choice."""
     if column == "double":
-        return AA_TEXT_WIDTH
+        return config.text_width_in
+    if column == "single":
+        return (config.text_width_in - config.column_sep_in) / 2.0
     raise ValueError("column must be either 'single' or 'double'")
 
 
-def aa_plot(
+def set_plot_style(
+    journal: str = "aa",
     column: Literal["single", "double"] = "single",
     *,
     fig_width: float | None = None,
     fig_height: float | None = None,
     height_ratio: float = GOLDEN_RATIO,
-    fontsize: float = 8.0,
+    fontsize: float | None = None,
     use_tex: bool = True,
     constrained_layout: bool = True,
     dpi: int = 600,
 ) -> None:
-    """Configure Matplotlib for homogeneous A&A publication figures.
+    """Configure Matplotlib for homogeneous publication figures.
 
     Call this function before creating a figure. The settings are applied
     globally through :data:`matplotlib.rcParams`.
 
     Parameters
     ----------
+    journal
+        Key of the journal in the registry (e.g., "aa", "oja"). Defaults to "aa".
     column
-        ``"single"`` for a 90 mm wide figure or ``"double"`` for a
-        184 mm wide figure.
+        ``"single"`` for a single-column figure or ``"double"`` for a full-width figure.
     fig_width
         Optional custom figure width in inches. This overrides ``column``.
     fig_height
@@ -83,8 +101,7 @@ def aa_plot(
     height_ratio
         Figure height divided by figure width. The default is the golden ratio.
     fontsize
-        Base font size in points. Eight points is a practical default for A&A
-        figures at their final printed size.
+        Base font size in points. If None, the journal's default is used.
     use_tex
         Use an external LaTeX installation for all text. Set this to ``False``
         for faster interactive work or when LaTeX is unavailable.
@@ -93,15 +110,14 @@ def aa_plot(
     dpi
         Resolution used for raster output. PDF and SVG output remains vector
         based for lines and text.
-
-    Notes
-    -----
-    Figure widths should normally be specified at their final publication size.
-    Avoid resizing figures in LaTeX, because resizing also changes the apparent
-    font size and line width.
     """
+    if journal not in JOURNAL_REGISTRY:
+        raise KeyError(f"Journal '{journal}' not found in registry. Available: {list(JOURNAL_REGISTRY.keys())}")
+
+    config = JOURNAL_REGISTRY[journal]
+
     if fig_width is None:
-        fig_width = _figure_width(column)
+        fig_width = _calculate_figure_width(config, column)
 
     if fig_width <= 0:
         raise ValueError("fig_width must be positive")
@@ -109,10 +125,13 @@ def aa_plot(
         raise ValueError("fig_height must be positive")
     if height_ratio <= 0:
         raise ValueError("height_ratio must be positive")
-    if fontsize <= 0:
+    if fontsize is not None and fontsize <= 0:
         raise ValueError("fontsize must be positive")
     if dpi <= 0:
         raise ValueError("dpi must be positive")
+
+    if fontsize is None:
+        fontsize = config.default_fontsize
 
     if fig_height is None:
         fig_height = fig_width * height_ratio
@@ -189,34 +208,50 @@ def revert_params() -> None:
 
 
 @contextmanager
-def aa_style(*args: object, **kwargs: object) -> Iterator[None]:
-    """Temporarily apply the A&A plotting style.
+def style_context(
+    journal: str = "aa",
+    column: Literal["single", "double"] = "single",
+    **kwargs: object
+) -> Iterator[None]:
+    """Temporarily apply a journal's plotting style.
 
-    All positional and keyword arguments are passed to :func:`aa_plot`.
+    All keyword arguments are passed to :func:`set_plot_style`.
 
     Example
     -------
 
-        with aa_style(column="double", fontsize=8, use_tex=False):
+        with style_context(journal="oja", column="double", fontsize=8, use_tex=False):
             fig, ax = plt.subplots()
             ax.plot(x, y)
     """
     previous = matplotlib.rcParams.copy()
-    aa_plot(*args, **kwargs)  # type: ignore[arg-type]
+    set_plot_style(journal=journal, column=column, **kwargs)
     try:
         yield
     finally:
         matplotlib.rcParams.update(previous)
 
 
+def aa_plot(**kwargs: object) -> None:
+    """Wrapper for A&A plots.
+
+    Passes all arguments to set_plot_style with journal="aa".
+    """
+    set_plot_style(journal="aa", **kwargs)
+
+def oja_plot(**kwargs: object) -> None:
+    """Wrapper for OJA plots.
+
+    Passes all arguments to set_plot_style with journal="oja".
+    """
+    set_plot_style(journal="aa", **kwargs)
+
+
 __all__ = [
-    "AA_COLUMN_SEP_MM",
-    "AA_COLUMN_WIDTH",
-    "AA_COLUMN_WIDTH_MM",
-    "AA_TEXT_WIDTH",
-    "AA_TEXT_WIDTH_MM",
-    "GOLDEN_RATIO",
+    "JournalConfig",
+    "JOURNAL_REGISTRY",
+    "set_plot_style",
+    "style_context",
     "aa_plot",
-    "aa_style",
     "revert_params",
 ]
