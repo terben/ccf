@@ -72,8 +72,9 @@ unconditionally -- no exception, no warning.
 r_m` is positive semidefinite but singular. If further coefficients
 `r_{m+1}, ..., r_N` are supplied, they are not free: they are uniquely
 forced by the null vector of that singular matrix, and a valid admissible
-sequence must equal the forced continuation (see `SH_research_note.pdf` and
-the `extend_at_boundary` docstring for the derivation).
+sequence must equal the forced continuation (see Erben (2026),
+doi:10.3847/2515-5172/ae83ae, and the `extend_at_boundary` docstring for
+the derivation).
 
 The consequence for the API: `alpha_1, ..., alpha_{m-1}`, together with the
 forced `alpha_m = +-1`, remain well defined, but there is no `r <-> alpha`
@@ -135,8 +136,7 @@ than case 3. `ccf.bounds` uses a second, looser tolerance,
 `_BOUNDARY_CONTINUATION_TOL`, for comparing a *supplied* coefficient
 against its forced continuation -- an order-dependent chain of products
 that amplifies roundoff faster than the single-step comparisons
-`_ROUNDING_TOL` guards. See `DOCUMENTATION.md` ("Tolerances") for why the
-two are kept separate.
+`_ROUNDING_TOL` guards.
 
 The arbitrary-precision path (`ccf/precision.py`) lets a caller
 resolve this ambiguity directly by increasing the working precision

@@ -11,9 +11,8 @@ from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
 
-# Absorbs float64 roundoff around exact admissibility/boundary values (see
-# DOCUMENTATION.md, "Tolerances"); unrelated to
-# ccf.bounds._BOUNDARY_CONTINUATION_TOL, which validates
+# Absorbs float64 roundoff around exact admissibility/boundary values;
+# unrelated to ccf.bounds._BOUNDARY_CONTINUATION_TOL, which validates
 # already-computed forced continuations rather than roundoff at the
 # boundary itself.
 _ROUNDING_TOL = 1.0e-12
@@ -424,7 +423,7 @@ def pacf(r: ArrayLike) -> FloatArray:
 
     # A batch with several problematic rows reports the smallest row
     # index, using that row's own error type -- matching the row-by-row
-    # loop this replaces (see docs/development_notes.md).
+    # loop this replaces.
     problem_mask = batch.invalid | batch.reached_boundary
     if np.any(problem_mask):
         row = int(np.argmax(problem_mask))

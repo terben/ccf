@@ -412,7 +412,7 @@ def test_admissible_volume_rejects_invalid_N(N):
 
 @pytest.mark.parametrize("N", [2, 3, 4])
 def test_sh_normalized_volume_matches_monte_carlo_admissible_fraction(N):
-    # Independent cross-check of V_N^SH = V_N / 2^N (Eq. volume_SH):
+    # Independent cross-check of V_N^SH = V_N / 2^N (Eq. (27)):
     # it is the probability that a correlation sequence drawn
     # uniformly from [-1, 1]^N is admissible.
     rng = np.random.default_rng(20260714)
