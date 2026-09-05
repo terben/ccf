@@ -50,8 +50,8 @@ JOURNAL_REGISTRY: dict[str, JournalConfig] = {
         default_fontsize=8.0,
     ),
     "oja": JournalConfig(
-        name="Open Journal of Astronomy",
-        text_width_in=7.1,
+        name="Open Journal of Astrophysics",
+        text_width_in=7.1014,
         column_sep_in=0.3125,
         default_fontsize=8.0,
     ),
@@ -151,8 +151,8 @@ def set_plot_style(
         "figure.constrained_layout.use": constrained_layout,
         "figure.dpi": 120,
         "savefig.dpi": dpi,
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.02,
+        "savefig.bbox": None,
+        "savefig.pad_inches": 0.0,
         # Typography
         "font.family": "serif",
         "font.size": fontsize,
@@ -244,7 +244,7 @@ def oja_plot(**kwargs: object) -> None:
 
     Passes all arguments to set_plot_style with journal="oja".
     """
-    set_plot_style(journal="aa", **kwargs)
+    set_plot_style(journal="oja", **kwargs)
 
 
 __all__ = [
@@ -253,5 +253,6 @@ __all__ = [
     "set_plot_style",
     "style_context",
     "aa_plot",
+    "oja_plot",
     "revert_params",
 ]
