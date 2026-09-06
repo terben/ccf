@@ -34,7 +34,7 @@ import mpmath as mp
 import numpy as np
 
 import ccf
-from style import oja_plot
+from style import set_plot_style, figure_path
 
 DEFAULT_JOBS = min(8, os.cpu_count() or 1)
 
@@ -228,7 +228,7 @@ def make_figure(
     ax_b.legend(framealpha=0.92, loc="best")
 
     # constrained_layout is enabled globally by oja_plot.
-    fig.savefig(path_stub.with_suffix(".pdf"))
+    fig.savefig(figure_path(path_stub.with_suffix(".pdf")))
     plt.close(fig)
 
 
@@ -236,7 +236,8 @@ def main() -> None:
     args = parse_args()
     quick = args.quick
 
-    oja_plot(column="double", height_ratio=0.25, fontsize=8.0, use_tex=True)
+    set_plot_style(journal="oja", column="double", height_ratio=0.25,
+                   fontsize=8.0, use_tex=True)
     rng = np.random.default_rng(SEED)
 
     failrate_n_values = QUICK_FAILRATE_N_VALUES if quick else PAPER_FAILRATE_N_VALUES

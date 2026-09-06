@@ -7,7 +7,7 @@ Typical use
 -----------
 
     import matplotlib.pyplot as plt
-    from style import set_plot_style
+    from style import set_plot_style, figure_path
 
     # Set style for Astronomy & Astrophysics single column
     set_plot_style(journal="aa", column="single")
@@ -15,7 +15,8 @@ Typical use
     ax.plot(x, y)
     ax.set_xlabel(r"Time ($\mathrm{s}$)")
     ax.set_ylabel(r"Flux ($\mathrm{Jy}$)")
-    fig.savefig("figure.pdf")
+    # Save as "figure_aa.pdf": journal suffix is appended automatically.
+    fig.savefig(figure_path("figure"))
 
 Use ``revert_params()`` to restore the Matplotlib configuration that was
 active when this module was imported. For temporary settings, use
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterator, Literal
 
 import matplotlib
@@ -41,7 +43,12 @@ class JournalConfig:
     column_sep_in: float
     default_fontsize: float = 8.0
 
-# Central Registry for journal configurations
+# Central Registry for journal configurations.
+#
+# text_width_in values are taken from the actual \textwidth of the
+# respective LaTeX class. For OJA (openjournal.cls, [apj,twocolumn]) the
+# value 7.1014 in was measured with \typeout{\the\textwidth} on the
+# CCF_oja.tex draft and matches the openjournal specification exactly.
 JOURNAL_REGISTRY: dict[str, JournalConfig] = {
     "aa": JournalConfig(
         name="Astronomy & Astrophysics",
@@ -59,6 +66,11 @@ JOURNAL_REGISTRY: dict[str, JournalConfig] = {
 
 # Store the configuration that was active when this module was imported.
 ORIGINAL_MATPLOTLIB_CONFIG = matplotlib.rcParams.copy()
+
+# Currently active journal key, set by set_plot_style() and consulted by
+# active_journal(), active_config(), and figure_path(). None means no
+# journal-specific style has been applied yet in this session.
+_ACTIVE_JOURNAL: str | None = None
 
 
 def _calculate_figure_width(config: JournalConfig, column: Literal["single", "double"]) -> float:
@@ -85,7 +97,17 @@ def set_plot_style(
     """Configure Matplotlib for homogeneous publication figures.
 
     Call this function before creating a figure. The settings are applied
-    globally through :data:`matplotlib.rcParams`.
+    globally through :data:`matplotlib.rcParams`, and the chosen ``journal``
+    key is remembered for later queries via :func:`active_journal` and
+    :func:`figure_path`.
+
+    The saved figure's bounding box is deliberately fixed to the requested
+    ``figsize``: ``savefig.bbox`` is set to ``None`` rather than ``"tight"``
+    so that every figure produced with the same journal/column choice has
+    identical output width in points. Matplotlib's constrained-layout
+    engine (enabled by default) ensures that all elements -- axis labels,
+    titles, legends -- are arranged inside the fixed ``figsize`` rather
+    than by post-hoc cropping.
 
     Parameters
     ----------
@@ -151,6 +173,11 @@ def set_plot_style(
         "figure.constrained_layout.use": constrained_layout,
         "figure.dpi": 120,
         "savefig.dpi": dpi,
+        # savefig.bbox = None (not "tight"): guarantee that every output PDF
+        # has exactly the requested figsize.  bbox="tight" plus pad_inches
+        # produces output widths that depend on drawing content and destroys
+        # cross-figure size consistency.  constrained_layout keeps all
+        # elements inside figsize, so no cropping is needed.
         "savefig.bbox": None,
         "savefig.pad_inches": 0.0,
         # Typography
@@ -201,10 +228,64 @@ def set_plot_style(
 
     matplotlib.rcParams.update(params)
 
+    global _ACTIVE_JOURNAL
+    _ACTIVE_JOURNAL = journal
+
 
 def revert_params() -> None:
-    """Restore the Matplotlib configuration active at module import time."""
+    """Restore the Matplotlib configuration active at module import time
+    and clear the recorded active journal."""
+    global _ACTIVE_JOURNAL
     matplotlib.rcParams.update(ORIGINAL_MATPLOTLIB_CONFIG)
+    _ACTIVE_JOURNAL = None
+
+
+def active_journal() -> str | None:
+    """Return the key of the currently active journal, or None if
+    :func:`set_plot_style` has not been called (or :func:`revert_params`
+    was called last)."""
+    return _ACTIVE_JOURNAL
+
+
+def active_config() -> JournalConfig | None:
+    """Return the ``JournalConfig`` of the currently active journal, or
+    None if no journal-specific style has been applied."""
+    if _ACTIVE_JOURNAL is None:
+        return None
+    return JOURNAL_REGISTRY[_ACTIVE_JOURNAL]
+
+
+def figure_path(
+    stub: str | Path,
+    extension: str = ".pdf",
+    *,
+    journal: str | None = None,
+) -> Path:
+    """Return a filename with the active journal key appended as suffix.
+
+    Given a stub ``figs/fig_2_roundtrip`` this returns
+    ``figs/fig_2_roundtrip_oja.pdf`` when the active journal is "oja",
+    ``figs/fig_2_roundtrip_aa.pdf`` when it is "aa", and
+    ``figs/fig_2_roundtrip.pdf`` when no journal is active or when the
+    caller passes ``journal=""``.
+
+    Parameters
+    ----------
+    stub
+        The path stub without extension. Trailing extensions on ``stub``
+        are stripped and replaced by ``extension``.
+    extension
+        The file extension including the leading dot (default ``.pdf``).
+    journal
+        Override the currently active journal. Pass an explicit key to
+        force a specific suffix, or the empty string ``""`` to suppress
+        the suffix even when a journal is active.
+    """
+    stub_path = Path(stub)
+    key = journal if journal is not None else _ACTIVE_JOURNAL
+    if not key:
+        return stub_path.with_suffix(extension)
+    return stub_path.with_name(f"{stub_path.stem}_{key}").with_suffix(extension)
 
 
 @contextmanager
@@ -215,7 +296,9 @@ def style_context(
 ) -> Iterator[None]:
     """Temporarily apply a journal's plotting style.
 
-    All keyword arguments are passed to :func:`set_plot_style`.
+    All keyword arguments are passed to :func:`set_plot_style`. The
+    previous rcParams and the previous active-journal key are restored
+    on context exit.
 
     Example
     -------
@@ -224,12 +307,15 @@ def style_context(
             fig, ax = plt.subplots()
             ax.plot(x, y)
     """
-    previous = matplotlib.rcParams.copy()
+    global _ACTIVE_JOURNAL
+    previous_params = matplotlib.rcParams.copy()
+    previous_journal = _ACTIVE_JOURNAL
     set_plot_style(journal=journal, column=column, **kwargs)
     try:
         yield
     finally:
-        matplotlib.rcParams.update(previous)
+        matplotlib.rcParams.update(previous_params)
+        _ACTIVE_JOURNAL = previous_journal
 
 
 def aa_plot(**kwargs: object) -> None:
@@ -238,6 +324,7 @@ def aa_plot(**kwargs: object) -> None:
     Passes all arguments to set_plot_style with journal="aa".
     """
     set_plot_style(journal="aa", **kwargs)
+
 
 def oja_plot(**kwargs: object) -> None:
     """Wrapper for OJA plots.
@@ -254,5 +341,8 @@ __all__ = [
     "style_context",
     "aa_plot",
     "oja_plot",
+    "active_journal",
+    "active_config",
+    "figure_path",
     "revert_params",
 ]

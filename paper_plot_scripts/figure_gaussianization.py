@@ -29,11 +29,12 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ks_2samp, kurtosis, skew
 
 import ccf
-from style import oja_plot
+from style import set_plot_style, figure_path
 
 # Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
 # The full figure width is taken from oja_plot; only the height ratio is set here.
-oja_plot(
+set_plot_style(
+    journal="oja",
     column="double",
     height_ratio=0.52,
     fontsize=8.0,
@@ -322,7 +323,8 @@ def make_figure(
     fig, axes = plt.subplots(
         2,
         3,
-        figsize=(plt.rcParams["figure.figsize"][0], plt.rcParams["figure.figsize"][0] * height_ratio),
+        figsize=(plt.rcParams["figure.figsize"][0],
+                 plt.rcParams["figure.figsize"][0] * height_ratio),
         sharex="col",
         gridspec_kw={
             "height_ratios": height_ratios,
@@ -477,13 +479,13 @@ def main() -> None:
         show_insets=args.stats_table is None, statistics=statistics,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.output)
-    print(f"Wrote {args.output}")
+    fig.savefig(figure_path(args.output))
+    print(f"Wrote {figure_path(args.output)}")
 
     if args.png:
         png = args.output.with_suffix(".png")
-        fig.savefig(png, dpi=300)
-        print(f"Wrote {png}")
+        fig.savefig(figure_path(png), dpi=300)
+        print(f"Wrote {figure_path(png)}")
     plt.close(fig)
 
 
