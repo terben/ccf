@@ -201,7 +201,7 @@ def make_figure(
         )
     ax_a.set_xscale("log")
     ax_a.set_xlabel(r"$N$")
-    ax_a.set_ylabel("failed trials [%]")
+    ax_a.set_ylabel(r'failed trials [\%]')
     ax_a.set_title("A: float64 failure rate")
     ax_a.legend(framealpha=0.92, loc="best")
 
