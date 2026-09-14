@@ -328,7 +328,7 @@ def log_admissible_volume(N: int) -> float:
     -------
     float
         ``log(V_N)``, the natural logarithm of the Lebesgue volume of
-        the admissible region in ``r``-space (Eq. (26), Sect. 4.5
+        the admissible region in ``r``-space (Eq. (25), Sect. 4.5
         of the companion paper).
 
     Raises
@@ -347,8 +347,8 @@ def log_admissible_volume(N: int) -> float:
 
     References
     ----------
-    Companion paper, Sect. 4.5, Eq. (26); the SH-normalized volume
-    ``V_N^SH = V_N / 2^N`` (Eq. (27)) is cross-checked in the test
+    Companion paper, Sect. 4.5, Eq. (25); the SH-normalized volume
+    ``V_N^SH = V_N / 2^N`` (Eq. (26)) is cross-checked in the test
     suite.
     """
     if N < 1 or N != int(N):

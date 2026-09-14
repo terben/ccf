@@ -1,6 +1,6 @@
 """Didactic reference implementation of the r <-> alpha bijection.
 
-Follows Eqs. (19a)--(19d) of the companion paper line by line, for a
+Follows Eqs. (17a)--(17d) of the companion paper line by line, for a
 one-dimensional sequence. See :mod:`ccf.levinson` for the batched,
 boundary-aware implementation used by the rest of the package; see
 ``docs/notation.md`` for the index correspondence between ``sigma2`` here
