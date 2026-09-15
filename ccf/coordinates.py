@@ -1,4 +1,4 @@
-"""Coordinate transforms, innovation variances, and Jacobians."""
+"""Coordinate transforms, residual variances, and Jacobians."""
 
 from __future__ import annotations
 
@@ -17,6 +17,10 @@ def fisher(alpha: ArrayLike) -> FloatArray:
     The transformation is
 
     ``y_n = arctanh(alpha_n)``.
+
+    Since the paper identifies ``x_n = alpha_n``, this is the
+    Schneider--Hartlap Fisher coordinate
+    ``y_n = atanh(x_n) = atanh(alpha_n)``.
 
     Parameters
     ----------
@@ -68,13 +72,13 @@ def inverse_fisher(y: ArrayLike) -> FloatArray:
 
 def innovation_variances(alpha: ArrayLike) -> FloatArray:
     """
-    Compute innovation variances from partial autocorrelations.
+    Compute residual variances from partial autocorrelations.
 
-    The recursion is
+    The paper's Levinson--Durbin residual-variance recursion (Sect. 4.4) is
 
-    ``sigma_n^2 = sigma_(n-1)^2 * (1 - alpha_n^2)``
+    ``sigma_(n+1)^2 = sigma_n^2 * (1 - alpha_n^2)``
 
-    with ``sigma_0^2 = 1``.
+    with ``sigma_1^2 = 1``.
 
     Parameters
     ----------
@@ -87,8 +91,14 @@ def innovation_variances(alpha: ArrayLike) -> FloatArray:
     Returns
     -------
     numpy.ndarray
-        Innovation variances ``(sigma_0^2, ..., sigma_N^2)``, or, for
-        a 2-D batch, ``(n_samples, N + 1)``.
+        Residual variances stored at implementation array positions:
+        array position ``j`` contains the paper quantity
+        ``sigma_(j+1)^2``. For a 1-D input with ``N`` PACFs, the
+        returned positions 0 through ``N`` therefore contain
+        ``sigma_1^2, ..., sigma_(N+1)^2`` in the paper notation.
+        For a 2-D input batch of shape ``(n_samples, N)``, the returned
+        array has shape ``(n_samples, N + 1)``, with the same mapping
+        along the second axis.
     """
     alpha_array = _asarray_batchable(alpha, name="alpha")
 
@@ -102,6 +112,8 @@ def innovation_variances(alpha: ArrayLike) -> FloatArray:
             alpha_array.size + 1,
             dtype=np.float64,
         )
+        # sigma2[j] stores the paper quantity sigma_(j+1)^2; sigma2[0] = 1
+        # is the paper initialization sigma_1^2 = 1.
         sigma2[0] = 1.0
 
         for n, alpha_n in enumerate(alpha_array, start=1):
@@ -148,7 +160,10 @@ def log_jacobian(alpha: ArrayLike) -> float:
 
     For ``N`` partial autocorrelations, the determinant is
 
-    ``prod_{k=1}^{N-1} (1 - alpha_k^2)^(N-k)``.
+    ``prod_{k=1}^{N-1} (1 - alpha_k^2)^(N-k)``,
+
+    the Jacobian ``det(d r / d alpha)`` of Sect. 4.4 (Eq. (20)) of the
+    companion paper, equivalently ``prod_{n=1}^{N} sigma_n^2``.
 
     Parameters
     ----------
@@ -190,6 +205,9 @@ def log_jacobian(alpha: ArrayLike) -> float:
 def jacobian(alpha: ArrayLike) -> float:
     """
     Compute the Jacobian determinant of the map ``alpha -> r``.
+
+    See :func:`log_jacobian` for the Sect. 4.4 / Eq. (20) connection to
+    the companion paper.
 
     Parameters
     ----------
