@@ -13,7 +13,7 @@ The goal is to give a paper reader a fast, executable tour of the public API:
 - boundary analysis and deterministic continuation,
 - admissible intervals,
 - Fisher coordinates,
-- innovation variances and Jacobians,
+- residual variances and Jacobians,
 - admissible-region volume,
 - arbitrary-precision roundtrips,
 - the didactic reference implementation,
@@ -24,7 +24,7 @@ The notation follows the paper:
     r       correlation coefficients (r_1, ..., r_N)
     alpha   partial autocorrelations (alpha_1, ..., alpha_N)
     y       Fisher coordinates
-    sigma2  innovation variances
+    sigma2  implementation array of residual variances
 
 The core package depends only on NumPy. Arbitrary precision requires `mpmath`;
 the symbolic examples require `sympy`.
@@ -67,6 +67,10 @@ recursion gives a bijection
     r = (r_1, ..., r_N)  <->  alpha = (alpha_1, ..., alpha_N),
 
 with every interior PACF satisfying `abs(alpha_n) < 1`.
+
+The paper identifies its Schneider--Hartlap coordinate with the partial
+autocorrelation exactly, `x_n = alpha_n` (see Section 10 below), so `alpha`
+here is already the paper's natural coordinate on the admissible region.
 
 Use
 
@@ -125,7 +129,7 @@ np.testing.assert_allclose(
 For a supplied correlation sequence `r`, the float64 recursion distinguishes:
 
 1. **interior**:
-   every relevant innovation variance is positive and `abs(alpha_n) < 1`;
+   every relevant residual variance is positive and `abs(alpha_n) < 1`;
 
 2. **boundary**:
    the sequence is still admissible, but the Toeplitz matrix becomes
@@ -170,7 +174,10 @@ for name, r_test in [
 `PACFStatus.order` uses the 1-based Levinson order:
 
 - for an interior sequence, `order == N`;
-- for a boundary sequence, it is the order where the boundary is reached;
+- for a boundary sequence, if `A_m` is the first singular Toeplitz matrix
+  (so `|alpha_(m-1)| = 1` and `sigma_m^2 = 0`), then `order == m - 1`: the
+  order of the last returned, saturating PACF `alpha_(m-1)`, not the index
+  `m` of the first singular matrix itself;
 - for an invalid sequence, it is the first order where admissibility fails.
 
 For a 2-D input, the status fields are 1-D arrays with one entry per row.
@@ -256,7 +263,7 @@ for name, r_test in [
 A boundary is *admissible but degenerate*. It is not the same as an invalid
 sequence.
 
-At a boundary, the full `r <-> alpha` bijection stops because the innovation
+At a boundary, the full `r <-> alpha` bijection stops because the residual
 variance reaches zero. `ccf.pacf_prefix(r)` returns the maximal independent
 PACF prefix and the recursion state needed to understand that boundary.
 
@@ -265,7 +272,7 @@ The returned `PrefixResult` contains:
     alpha             maximal PACF prefix
     order             number of independent PACF coefficients
     reached_boundary  whether a boundary was reached
-    sigma2            innovation-variance trace
+    sigma2            residual-variance trace (sigma2[j] <-> sigma_(j+1)^2)
     predictor         terminal predictor at the boundary, else None
 """
 
@@ -343,17 +350,22 @@ assert not ccf.check_admissibility(r_invalid)
 
 For each correlation coefficient, the admissible interval is centered on the
 Levinson linear prediction and has a half-width given by the corresponding
-innovation variance.
+residual variance,
 
-The attached code snapshot returns bounds for the *supplied* coefficients:
+    p_n - sigma_n^2 <= r_n <= p_n + sigma_n^2.
+
+For an input `r = (r_1, ..., r_N)`,
 
     lower, upper = ccf.admissible_bounds(r)
 
-with `len(lower) == len(r)`.
+returns arrays of length `N + 1`:
 
-A planned API extension discussed during development is to also append the
-interval for the next coefficient, giving arrays of length `N + 1`.
-The compatibility helper below works with either convention.
+    entries 0,...,N-1:  admissible intervals for r_1,...,r_N
+    entry N:            admissible interval for r_(N+1),
+
+where the final interval is
+
+    p_(N+1) - sigma_(N+1)^2  <=  r_(N+1)  <=  p_(N+1) + sigma_(N+1)^2.
 
 At a degenerate boundary, later bounds collapse to the uniquely forced
 continuation.
@@ -376,28 +388,31 @@ assert np.all(r <= upper[: len(r)] + 1e-12)
 """
 ### The admissible interval for the *next* coefficient
 
-If your installed version already implements the `N+1` return convention,
-the next interval is simply
+Under the current API, the next interval is already part of the direct call:
 
-    lower[-1], upper[-1]
+    lower, upper = ccf.admissible_bounds(r)
+    next_lo, next_hi = lower[-1], upper[-1]
 
-For the attached snapshot, the following helper obtains the same information
-using only public functions. It chooses `alpha_(N+1)=0`, which places the
-next correlation coefficient at the center of its admissible interval, and
-then asks `admissible_bounds` for that extended sequence.
+The `next_admissible_interval` helper below returns the same values through
+a slightly different, public-API-only route. It chooses `alpha_(N+1)=0`,
+which places the next correlation coefficient at the center of its
+admissible interval, and then asks `admissible_bounds` for that extended
+sequence.
 """
 
 # %%
 def next_admissible_interval(r):
-    """Compatibility helper for the current and planned bounds API."""
+    """Return the next interval, retaining compatibility with the former
+    N-entry bounds API."""
     r = np.asarray(r, dtype=float)
     lower, upper = ccf.admissible_bounds(r)
 
-    # Newer N+1 convention, if present.
+    # Current N+1 API convention.
     if len(lower) == len(r) + 1:
         return float(lower[-1]), float(upper[-1])
 
-    # Current attached snapshot: extend through alpha_(N+1) = 0.
+    # Backward compatibility with the former N-entry convention:
+    # extend through alpha_(N+1) = 0.
     alpha = ccf.pacf(r)
     r_center = ccf.from_pacf(np.append(alpha, 0.0))
     lower_ext, upper_ext = ccf.admissible_bounds(r_center)
@@ -497,8 +512,12 @@ print("SH coordinates:", ccf.sh_coordinates(r))
 PACFs live in the open hypercube `(-1, 1)^N`. Fisher coordinates remove
 those box constraints elementwise:
 
-    y_n = arctanh(alpha_n)
+    y_n = atanh(alpha_n)
     alpha_n = tanh(y_n)
+
+Since the paper identifies `x_n = alpha_n` (Section 10), this is exactly
+the Schneider--Hartlap real-line coordinate `y_n = atanh(x_n)`. Note that
+`x_n` itself remains bounded in `[-1, 1]`; only `y_n` is unbounded.
 
 Use
 
@@ -547,22 +566,25 @@ assert ccf.pacf_status(r).interior
 
 # %% [markdown]
 """
-## 12. Innovation variances
+## 12. Residual variances
 
 Use
 
     ccf.innovation_variances(alpha)
 
-to compute
+to compute the paper's residual variances
 
-    sigma_0^2, sigma_1^2, ..., sigma_N^2,
+    sigma_1^2, ..., sigma_(N+1)^2,
 
 where
 
-    sigma_0^2 = 1,
-    sigma_n^2 = sigma_(n-1)^2 * (1 - alpha_n^2).
+    sigma_1^2 = 1,
+    sigma_(n+1)^2 = sigma_n^2 * (1 - alpha_n^2).
 
-The result has length `N+1`, or shape `(M, N+1)` for a batch.
+The returned array is a zero-based implementation array with
+`sigma2[j] <-> sigma_(j+1)^2`, so `sigma2[0] == sigma_1^2 == 1` and, for `N`
+PACFs, `sigma2[N] == sigma_(N+1)^2`. The result has length `N+1`, or shape
+`(M, N+1)` for a batch. The paper has no `sigma_0^2`.
 """
 
 # %%
@@ -593,10 +615,18 @@ print("shape:", sigma2_batch.shape)
 ## 13. Jacobian of `alpha -> r`
 
 The change of variables from PACFs to correlations has a triangular
-Jacobian. The package exposes
+Jacobian. Following Sect. 4.4 of the paper,
+
+    det(d r / d alpha) = prod_(n=1)^N sigma_n^2
+                        = prod_(k=1)^(N-1) (1 - alpha_k^2)^(N-k).
+
+The package exposes
 
     ccf.jacobian(alpha)
     ccf.log_jacobian(alpha)
+
+for this `r`-space determinant. It is not the Fisher-coordinate Jacobian
+`det(d y / d alpha) = prod_n (1 - alpha_n^2)^(-1)`.
 
 The log form is preferable at high order because the determinant can become
 very small.
@@ -733,6 +763,10 @@ Representative helpers include:
 For example, `verify_x_equals_alpha(order)` simplifies the symbolic
 difference between the Schneider--Hartlap coordinate and the PACF. A
 successful verification returns exactly zero.
+
+This is a finite-order symbolic consistency check, not the paper's proof
+that `x_n = alpha_n` in general. That proof is the geometric
+projection/persymmetry argument given in the paper.
 """
 
 # %%
@@ -774,7 +808,7 @@ Use when the mathematical state itself is the question.
 Use for detailed analysis of a degenerate boundary.
 
 - returns the maximal boundary-inclusive PACF prefix;
-- exposes the innovation-variance trace and terminal predictor;
+- exposes the residual-variance trace and terminal predictor;
 - invalid input still raises.
 
 ### `extend_at_boundary(r, n_extra)`
