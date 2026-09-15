@@ -4,7 +4,7 @@
 
 A correlation sequence `r` is admissible if its Toeplitz matrix is positive
 semidefinite at every order. The Levinson--Durbin recursion that maps `r` to
-partial autocorrelations `alpha` divides by the innovation variance
+partial autocorrelations `alpha` divides by the residual variance
 `sigma_n^2` at each step, so it is a genuine bijection only where
 `sigma_n^2 > 0`. `sigma_n^2` can reach exactly zero for an otherwise
 perfectly admissible `r`: the sequence has simply run out of independent
@@ -19,9 +19,11 @@ Four cases need to be told apart:
 3. inadmissible sequences,
 4. finite-precision ambiguity between the above.
 
-All four are read off one quantity: the innovation-variance trace
-`sigma_0^2 = 1, sigma_1^2, ..., sigma_N^2` produced by the single Levinson
-recursion (`ccf.levinson._levinson_correlations_batch`) shared by
+All four are read off one quantity: the residual-variance trace -- stored
+as zero-based array positions `sigma2[0], sigma2[1], ..., sigma2[N]` with
+`sigma2[j] <-> sigma_(j+1)^2` (so `sigma2[0] = sigma_1^2 = 1`; see
+`docs/notation.md`) -- produced by the single Levinson recursion
+(`ccf.levinson._levinson_correlations_batch`) shared by
 `pacf`, `pacf_status`, `pacf_prefix`, and `ccf.bounds`. The sections
 below are different readings of that one recursion's output, not different
 algorithms.
@@ -66,20 +68,23 @@ unconditionally -- no exception, no warning.
 
 ## 2. Degenerate boundary sequences
 
-**Meaning.** `sigma_m^2 = 0` at some order `m <= N` (equivalently
-`abs(alpha_m) = 1`), reached from a strictly positive-definite prefix
-(`sigma_n^2 > 0` for `n < m`). The Toeplitz matrix built from `r_1, ...,
-r_m` is positive semidefinite but singular. If further coefficients
-`r_{m+1}, ..., r_N` are supplied, they are not free: they are uniquely
-forced by the null vector of that singular matrix, and a valid admissible
-sequence must equal the forced continuation (see Erben (2026),
+**Meaning.** `sigma_m^2 = 0` at some order `m <= N`, where `m` is the index
+of the first singular Toeplitz matrix `A_m` (equivalently
+`abs(alpha_{m-1}) = 1`), reached from a strictly positive-definite prefix
+(`sigma_n^2 > 0` for `n < m`). The matrix `A_m = (r_{|i-j|})_{i,j=0,...,m-1}`,
+built from `r_0, r_1, ..., r_{m-1}` (not yet `r_m`), is positive
+semidefinite but singular. If further coefficients `r_m, r_{m+1}, ...,
+r_N` are supplied, they are not free: they are uniquely forced by the
+null vector of that singular matrix, and a valid admissible sequence must
+equal the forced continuation (see Erben (2026),
 doi:10.3847/2515-5172/ae83ae, and the `extend_at_boundary` docstring for
 the derivation).
 
-The consequence for the API: `alpha_1, ..., alpha_{m-1}`, together with the
-forced `alpha_m = +-1`, remain well defined, but there is no `r <-> alpha`
-bijection beyond order `m` -- `alpha_{m+1}, ..., alpha_N` simply do not
-exist as independent coordinates. Three distinct operations apply here:
+The consequence for the API: `alpha_1, ..., alpha_{m-1}` remain well
+defined, the last entry saturating (`abs(alpha_{m-1}) = 1`), but there is
+no `r <-> alpha` bijection beyond order `m - 1` -- `alpha_m, ...,
+alpha_N` simply do not exist as independent coordinates. Three distinct
+operations apply here:
 
 - **Coordinate transformation -- `pacf(r)`.** Raises `SingularToeplitzError`
   the moment it hits this case. There is no mode parameter to suppress it;
@@ -87,9 +92,9 @@ exist as independent coordinates. Three distinct operations apply here:
 - **Boundary analysis -- `pacf_prefix(r)`.** Never raises on a
   degenerate-but-admissible input. Returns a `PrefixResult` with the maximal
   independent PACF prefix (`alpha`, its last entry exactly `+1` or `-1`),
-  the order `m` at which the boundary was reached, the innovation-variance
-  trace, and the terminal predictor `phi^{(m)}` needed to continue past
-  the boundary.
+  the order (`PrefixResult.order = m - 1`) at which the boundary was
+  reached, the residual-variance trace, and the terminal predictor
+  `phi^{(m)}` needed to continue past the boundary.
 - **Deterministic continuation -- `extend_at_boundary(r, n_extra)`.**
   Appends the uniquely forced continuation past the boundary. Coefficients
   already supplied past the boundary are validated against that forced
@@ -103,13 +108,24 @@ exist as independent coordinates. Three distinct operations apply here:
 
 ## 3. Inadmissible sequences
 
-**Meaning.** `abs(alpha_n) > 1` for some `n` -- equivalently, a leading
-principal submatrix of the Toeplitz matrix has a negative eigenvalue. This
-is a plain input error: `r` does not correspond to any nonnegative power
+**Meaning.** If the recursion reaches a step `n` with positive residual
+variance `sigma_n^2` and obtains `abs(alpha_n) > 1`, the next Toeplitz
+extension is not positive semidefinite -- equivalently, the corresponding
+leading Toeplitz matrix has acquired a negative eigenvalue. This is a
+plain input error: `r` does not correspond to any nonnegative power
 spectrum. It is unrelated to the boundary case above even though both are
-detected during the same recursion pass -- the boundary is `sigma_n^2 = 0`
-exactly; this is the recursion becoming mathematically impossible to
-continue at all.
+detected during the same recursion pass, and the two must be told apart
+precisely: `abs(alpha_n) > 1` signals an inadmissible next Toeplitz
+extension, while `abs(alpha_n) = 1` -- itself computed from that same
+positive `sigma_n^2` -- signals an admissible singular boundary instead.
+The saturating step's update then produces `sigma_(n+1)^2 = 0`, not
+`sigma_n^2 = 0`:
+
+`abs(alpha_n) = 1` => `sigma_(n+1)^2 = 0` => `A_(n+1)` is singular.
+
+In the paper's boundary notation this is `m = n + 1`, so
+`abs(alpha_(m-1)) = 1`, `sigma_m^2 = 0`, and `A_m` is the first singular
+Toeplitz matrix.
 
 **Behavior.** `pacf`, `pacf_prefix`, `from_pacf`, and `admissible_bounds`
 all raise `ValueError`, distinct from `SingularToeplitzError`.
