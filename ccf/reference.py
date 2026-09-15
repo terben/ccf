@@ -2,9 +2,10 @@
 
 Follows Eqs. (17a)--(17d) of the companion paper line by line, for a
 one-dimensional sequence. See :mod:`ccf.levinson` for the batched,
-boundary-aware implementation used by the rest of the package; see
-``docs/notation.md`` for the index correspondence between ``sigma2`` here
-and the paper's ``sigma_n^2``.
+boundary-aware implementation used by the rest of the package.
+
+At the beginning of recursion step ``n``, the local scalar ``sigma2``
+holds the paper's ``sigma_n^2``.
 """
 
 from __future__ import annotations
@@ -29,7 +30,21 @@ def pacf_reference(r: ArrayLike) -> FloatArray:
     """Convert correlation coefficients to partial autocorrelations.
 
     Direct, unoptimized implementation of the forward Levinson--Durbin
-    recursion (Eqs. (19a)--(19d)) for an admissible interior sequence.
+    recursion (Eqs. (17a)--(17d)) for an admissible interior sequence.
+
+    At recursion step ``n``, the local scalars correspond to the paper's
+    quantities as
+
+        prediction  <-> p_n
+        sigma2      <-> sigma_n^2
+
+    so that ``alpha_n = (r_n - p_n) / sigma_n^2``. The zero-based
+    ``r[n - 1]`` and ``alpha[n - 1]`` are Python storage for the paper's
+    one-indexed ``r_n`` and ``alpha_n``.
+
+    This routine is restricted to an admissible INTERIOR sequence
+    (``abs(alpha_n) < 1`` for all ``n``); it does not implement the
+    boundary-aware continuation of :mod:`ccf.levinson`.
 
     Parameters
     ----------
@@ -52,7 +67,7 @@ def pacf_reference(r: ArrayLike) -> FloatArray:
 
     alpha = [0.0] * n_max
     phi: list[float] = []
-    sigma2 = 1.0
+    sigma2 = 1.0  # paper: sigma_1^2 = 1
 
     for n in range(1, n_max + 1):
         if n == 1:
@@ -78,6 +93,7 @@ def pacf_reference(r: ArrayLike) -> FloatArray:
         phi_next[n - 1] = alpha_n
         phi = phi_next
 
+        # paper: sigma_(n+1)^2 = sigma_n^2 (1 - alpha_n^2)
         sigma2 = sigma2 * (1.0 - alpha_n * alpha_n)
 
     return np.array(alpha, dtype=np.float64)
@@ -87,8 +103,20 @@ def from_pacf_reference(alpha: ArrayLike) -> FloatArray:
     """Reconstruct correlation coefficients from partial autocorrelations.
 
     Direct, unoptimized implementation of the inverse Levinson--Durbin
-    recursion, using ``r_n = prediction + alpha_n * sigma2`` explicitly at
-    each step.
+    recursion, using the paper's inverse triangular relation
+
+        r_n = p_n + alpha_n * sigma_n^2
+
+    explicitly at each step, where the local scalars correspond to the
+    paper's quantities as
+
+        prediction  <-> p_n
+        sigma2      <-> sigma_n^2.
+
+    The same residual-variance recursion as in :func:`pacf_reference` is
+    used, ``sigma_(n+1)^2 = sigma_n^2 * (1 - alpha_n^2)``, with
+    ``sigma_1^2 = 1``. As in :func:`pacf_reference`, this is the interior
+    PACF chart: entries of ``alpha`` must satisfy ``abs(alpha_n) < 1``.
 
     Parameters
     ----------
@@ -117,7 +145,7 @@ def from_pacf_reference(alpha: ArrayLike) -> FloatArray:
 
     r = [0.0] * n_max
     phi: list[float] = []
-    sigma2 = 1.0
+    sigma2 = 1.0  # sigma2 is paper sigma_1^2 = 1 initially
 
     for n in range(1, n_max + 1):
         alpha_n = float(alpha[n - 1])
@@ -137,6 +165,7 @@ def from_pacf_reference(alpha: ArrayLike) -> FloatArray:
         phi_next[n - 1] = alpha_n
         phi = phi_next
 
+        # sigma_(n+1)^2 = sigma_n^2 (1 - alpha_n^2)
         sigma2 = sigma2 * (1.0 - alpha_n * alpha_n)
 
     return np.array(r, dtype=np.float64)
