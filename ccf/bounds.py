@@ -30,7 +30,8 @@ def _forced_continuation(phi: FloatArray, window: list[float]) -> float:
     ----------
     phi
         Terminal Levinson--Durbin predictor coefficients at the
-        singular boundary (see :func:`extend_at_boundary`).
+        singular boundary (matrix ``A_m`` in the paper notation; see
+        :func:`extend_at_boundary`).
     window
         The ``len(phi)`` most recent correlation coefficients, oldest
         first.
@@ -75,20 +76,24 @@ def admissible_bounds(
 
     Notes
     -----
-    At order ``n``, the interval is ``p_n -+ sigma_(n-1)^2``, centred on
-    the linear prediction ``p_n``. At a degenerate boundary, subsequent
-    bounds -- including the appended next-coefficient interval -- collapse
-    to the uniquely determined continuation (see :func:`extend_at_boundary`);
-    coefficients supplied past that point are validated against it, not
-    merely checked for presence.
+    In the paper notation, the admissible interval for ``r_n`` is
+    ``p_n - sigma_n^2 <= r_n <= p_n + sigma_n^2``: centre ``p_n``, the
+    linear prediction, and half-width ``sigma_n^2``. At a degenerate
+    boundary, subsequent bounds -- including the appended next-coefficient
+    interval -- collapse to the uniquely determined continuation (see
+    :func:`extend_at_boundary`); coefficients supplied past that point are
+    validated against it, not merely checked for presence.
     """
     r_array = _asarray1d(r, name="r")
     result = _run_levinson_from_correlations(r_array)
 
     number_computed = result.r.size
 
-    # r_(n, lower/upper) = p_n -+ sigma_(n-1)^2; result.sigma2[:number_computed]
-    # holds exactly sigma_0^2, ..., sigma_(m-1)^2, the half-width at each step.
+    # In the paper notation, the admissible interval for r_n has centre
+    # p_n and half-width sigma_n^2. With the implementation indexing of
+    # result.sigma2, array position n - 1 stores this sigma_n^2; hence
+    # result.sigma2[:number_computed] holds the half-widths for
+    # r_1, ..., r_number_computed, in that order.
     half_width = result.sigma2[:number_computed]
     r_lower = result.prediction - half_width
     r_upper = result.prediction + half_width
@@ -126,7 +131,9 @@ def admissible_bounds(
 
     # Next-coefficient interval, from the same terminal predictor/window
     # used above for the boundary continuation (or, in the interior case,
-    # the linear prediction p_(N+1) -+ sigma_N^2).
+    # the linear prediction p_(N+1) +/- sigma_(N+1)^2; for a supplied
+    # prefix of length N = number_computed, result.sigma2[number_computed]
+    # stores this sigma_(N+1)^2).
     next_center = _forced_continuation(phi, window)
     next_half_width = float(result.sigma2[number_computed])
 
@@ -143,10 +150,12 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     Parameters
     ----------
     r
-        Admissible sequence ending at a degenerate boundary
-        (``sigma_m^2 = 0`` for some order ``m``). Entries already
-        supplied past the boundary are validated against the forced
-        continuation rather than overwritten.
+        Admissible sequence ending at a degenerate boundary, where
+        ``m`` is the index of the first singular Toeplitz matrix ``A_m``
+        (``sigma_m^2 = 0``; at this exact boundary, ``alpha_(m-1)`` is
+        the last PACF coefficient). Entries already supplied past the
+        boundary are validated against the forced continuation rather
+        than overwritten.
     n_extra
         Total number of coefficients after the boundary to include in the
         returned sequence. Coefficients already supplied beyond the
@@ -170,7 +179,7 @@ def extend_at_boundary(r: ArrayLike, n_extra: int) -> FloatArray:
     Notes
     -----
     The continuation is the unique linear recurrence forced by the null
-    vector of the singular Toeplitz matrix at the boundary, given by the
+    vector of the first singular Toeplitz matrix ``A_m``, given by the
     terminal Levinson--Durbin predictor; see Sect. 4.6 of the companion
     paper and Erben (2026), doi:10.3847/2515-5172/ae83ae, for the
     derivation of the forced recurrence.
@@ -379,7 +388,7 @@ def admissible_volume(N: int) -> float:
     Returns
     -------
     float
-        ``V_N`` (Eq. (26), Sect. 4.5 of the companion paper),
+        ``V_N`` (Eq. (25), Sect. 4.5 of the companion paper),
 
         ``V_N = 2 * prod_(j=1)^(N-1) sqrt(pi) * j! / Gamma(j + 3/2)``.
 
