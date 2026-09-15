@@ -1,4 +1,11 @@
-"""Symbolic low-order expressions and identities used for verification."""
+"""Low-order symbolic expressions and identity checks for the companion paper.
+
+These utilities build finite-order symbolic Toeplitz correlation
+matrices and Levinson-Durbin quantities used to verify, at low order,
+the relations of "Natural Coordinates for Constrained Correlation
+Functions: Partial Autocorrelations and the Geometry of Positive Power
+Spectra".
+"""
 
 from __future__ import annotations
 
@@ -13,7 +20,25 @@ _MAX_SYMBOLIC_ORDER = 6
 
 @dataclass(frozen=True, slots=True)
 class _SymbolicLevinsonState:
-    """Internal state of the symbolic Levinson recursion."""
+    """
+    Internal state of the symbolic Levinson recursion.
+
+    Attributes
+    ----------
+    r
+        Symbolic normalized correlation coefficients ``(r_1, ..., r_N)``.
+    alpha
+        Symbolic partial autocorrelations ``(alpha_1, ..., alpha_N)``.
+    sigma2
+        Symbolic residual variances. Tuple position ``j`` stores the
+        paper quantity ``sigma_(j+1)^2``, so ``sigma2[0] = sigma_1^2``
+        (equal to 1) and, in general, ``sigma2[j] <-> sigma_(j+1)^2``.
+        There is no mathematical ``sigma_0^2``; this is a storage
+        convention only.
+    predictor_coefficients
+        Symbolic Levinson-Durbin predictor coefficients for each order
+        computed so far.
+    """
 
     r: tuple[sp.Symbol, ...]
     alpha: tuple[sp.Expr, ...]
@@ -49,7 +74,8 @@ def correlation_symbols(order: int) -> tuple[sp.Symbol, ...]:
     Parameters
     ----------
     order
-        Highest correlation order.
+        Highest paper lag; symbols are returned for ``r_1`` through
+        ``r_order``.
 
     Returns
     -------
@@ -121,7 +147,23 @@ def toeplitz_determinant(size: int) -> sp.Expr:
 
 @lru_cache(maxsize=None)
 def _symbolic_state(order: int) -> _SymbolicLevinsonState:
-    """Return the cached symbolic Levinson state through the requested order."""
+    """
+    Return the cached symbolic Levinson state through the requested order.
+
+    Notes
+    -----
+    Following the companion paper's Levinson-Durbin relations,
+
+    ``alpha_n = (r_n - p_n) / sigma_n^2``
+
+    and
+
+    ``sigma_(n+1)^2 = sigma_n^2 * (1 - alpha_n^2)``,
+
+    with ``sigma_1^2 = 1``. See ``_SymbolicLevinsonState.sigma2`` for
+    the tuple-position convention used to store the resulting
+    ``sigma_n^2`` sequence.
+    """
     _validate_symbolic_order(order)
 
     r = correlation_symbols(order)
@@ -218,7 +260,7 @@ def innovation_variances_symbolic(
     order: int,
 ) -> tuple[sp.Expr, ...]:
     """
-    Compute symbolic innovation variances.
+    Compute symbolic residual variances.
 
     Parameters
     ----------
@@ -228,7 +270,10 @@ def innovation_variances_symbolic(
     Returns
     -------
     tuple of Expr
-        Expressions ``(sigma_0^2, ..., sigma_order^2)``.
+        Residual variances where tuple position ``j`` holds the paper
+        quantity ``sigma_(j+1)^2``, i.e. the tuple represents
+        ``(sigma_1^2, ..., sigma_(order+1)^2)``. There is no
+        mathematical ``sigma_0^2``.
     """
     return _symbolic_state(order).sigma2
 
@@ -294,7 +339,15 @@ def admissible_bounds_symbolic(
     Notes
     -----
     The interval is centered on the linear prediction ``p_order`` and
-    has half-width ``sigma_(order-1)^2``.
+    has half-width ``sigma_order^2``:
+
+    ``p_order - sigma_order^2 <= r_order <= p_order + sigma_order^2``.
+
+    The half-width is obtained from ``previous_state.sigma2[-1]``,
+    i.e. tuple position ``order - 1`` of the state for ``order - 1``.
+    Under the ``sigma2[j] <-> sigma_(j+1)^2`` storage convention (see
+    ``_SymbolicLevinsonState.sigma2``), that position holds exactly
+    the paper quantity ``sigma_order^2``.
     """
     _validate_symbolic_order(order)
 
@@ -326,6 +379,15 @@ def sh_coordinate_symbolic(order: int) -> sp.Expr:
     Expr
         Symbolic expression for ``x_order`` constructed directly from
         the admissible interval boundaries.
+
+    Notes
+    -----
+    Following the companion paper,
+
+    ``x_n = (2 r_n - r_(n,u) - r_(n,l)) / (r_(n,u) - r_(n,l))``,
+
+    where ``r_(n,l)`` and ``r_(n,u)`` are the admissible-interval
+    bounds returned by ``admissible_bounds_symbolic``.
     """
     _validate_symbolic_order(order)
 
@@ -344,6 +406,12 @@ def sh_coordinate_symbolic(order: int) -> sp.Expr:
 def verify_x_equals_alpha(order: int) -> sp.Expr:
     """
     Verify symbolically that ``x_order = alpha_order``.
+
+    Checks, at the requested low order, the companion paper's main
+    identification ``x_n = alpha_n`` between the Schneider-Hartlap
+    coordinate and the partial autocorrelation. This is only a
+    symbolic consistency check at finite order; it does not constitute
+    the paper's (geometric) proof of the identification.
 
     Parameters
     ----------
