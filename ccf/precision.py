@@ -1,8 +1,8 @@
 """Arbitrary-precision PACF transformations.
 
 Standalone ``mpmath`` counterpart to :mod:`ccf.levinson`, for
-sequences where ``sigma_n^2`` underflows ``float64`` (see
-:func:`recommended_dps`).
+sequences where the residual variance ``sigma_n^2`` underflows
+``float64`` (see :func:`recommended_dps`).
 """
 
 from __future__ import annotations
@@ -78,9 +78,11 @@ def pacf_mp(
         Working precision in decimal places. By default,
         :func:`recommended_dps` is used.
     at_boundary
-        Boundary behavior, either ``"raise"`` or ``"warn"``. ``"warn"``
-        emits a ``RuntimeWarning`` and returns the non-degenerate
-        prefix only. See Notes.
+        Boundary behavior, either ``"raise"`` or ``"warn"``, at the
+        degenerate boundary where ``A_m`` is the first singular
+        Toeplitz matrix. ``"warn"`` emits a ``RuntimeWarning`` and
+        returns the ``alpha_1, ..., alpha_(m-1)`` prefix, including
+        the saturating ``alpha_(m-1)``. See Notes.
 
     Returns
     -------
@@ -101,6 +103,16 @@ def pacf_mp(
     Unlike the ``float64`` path (split into :func:`ccf.levinson.pacf`
     and :func:`ccf.levinson.pacf_prefix`), ``at_boundary`` stays a
     mode parameter here.
+
+    At the degenerate boundary, ``A_m`` is the first singular Toeplitz
+    matrix: ``alpha_(m-1)`` is the last PACF coefficient, with
+    ``|alpha_(m-1)| = 1``, and ``sigma_m^2 = sigma_(m-1)^2 * (1 -
+    alpha_(m-1)^2) = 0``. With ``at_boundary="raise"``, forming
+    ``alpha_m`` would divide by this zero ``sigma_m^2``, and a
+    ``SingularToeplitzError`` is raised instead. With
+    ``at_boundary="warn"``, a ``RuntimeWarning`` is emitted and the
+    coefficients computed so far, ``alpha_1, ..., alpha_(m-1)``, are
+    returned.
     """
     if at_boundary not in ("raise", "warn"):
         raise ValueError(
@@ -126,8 +138,13 @@ def pacf_mp(
         phi: list[mp.mpf] = []
 
         for n in range(1, n_max + 1):
-            idx = n - 1
+            idx = n - 1  # zero-based position of r_n in r_mp
 
+            # sigma_sq[-1] is paper sigma_n^2 at this point. Reaching
+            # this branch means the previous step produced
+            # |alpha_(n-1)| = 1, so sigma_n^2 = 0, A_n is the first
+            # singular Toeplitz matrix (m = n), and alpha_n cannot be
+            # formed.
             if sigma_sq[-1] <= 0:
                 if at_boundary == "raise":
                     from .levinson import SingularToeplitzError
@@ -154,9 +171,9 @@ def pacf_mp(
             else:
                 p_n = mp.fdot(phi, r_mp[n - 2 :: -1])
 
-            a = (r_mp[idx] - p_n) / sigma_sq[-1]
+            a = (r_mp[idx] - p_n) / sigma_sq[-1]  # alpha_n = (r_n - p_n) / sigma_n^2
             alpha.append(a)
-            sigma_sq.append(sigma_sq[-1] * (1 - a * a))
+            sigma_sq.append(sigma_sq[-1] * (1 - a * a))  # sigma_sq[-1] is now sigma_(n+1)^2
 
             if n == 1:
                 phi = [a]
@@ -199,6 +216,14 @@ def from_pacf_mp(
     ------
     ValueError
         If the input is invalid.
+
+    Notes
+    -----
+    Implements the inverse recursion ``r_n = p_n + alpha_n *
+    sigma_n^2``, with ``sigma_(n+1)^2 = sigma_n^2 * (1 - alpha_n^2)``
+    and ``sigma_1^2 = 1``. The input restriction ``|alpha_n| < 1``
+    keeps this inverse coordinate map strictly inside the
+    non-degenerate PACF chart.
     """
     from .levinson import _as_sequence_1d
 
@@ -235,8 +260,8 @@ def from_pacf_mp(
             else:
                 p_n = mp.fdot(phi, r[n - 2 :: -1])
 
-            r.append(p_n + a * sigma_sq[-1])
-            sigma_sq.append(sigma_sq[-1] * (1 - a * a))
+            r.append(p_n + a * sigma_sq[-1])  # r_n = p_n + alpha_n * sigma_n^2
+            sigma_sq.append(sigma_sq[-1] * (1 - a * a))  # sigma_sq[-1] is now sigma_(n+1)^2
 
             if n == 1:
                 phi = [a]
