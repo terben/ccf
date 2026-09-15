@@ -1,4 +1,10 @@
-"""Levinson--Durbin transformations between correlations and PACFs."""
+"""Levinson--Durbin transformations between correlations and PACFs.
+
+Implements the recursion relating correlation coefficients r_n and partial
+autocorrelations (PACFs) alpha_n used in the companion paper "Natural
+Coordinates for Constrained Correlation Functions: Partial Autocorrelations
+and the Geometry of Positive Power Spectra".
+"""
 
 from __future__ import annotations
 
@@ -22,7 +28,11 @@ class SingularToeplitzError(Exception):
     """Raised when the PACF recursion reaches a degenerate boundary.
 
     The sequence is admissible, but the ``r <-> alpha`` bijection ends
-    there; see ``docs/boundary_semantics.md``.
+    there. At an exact mathematical boundary, ``|alpha_n| = 1`` implies
+    ``sigma_(n+1)^2 = 0``, so ``A_(n+1)`` is the first singular Toeplitz
+    matrix (``m = n + 1``) in the paper notation. The float64 recursion
+    also treats numerically unresolved near-boundary cases according to
+    ``_ROUNDING_TOL``; see ``docs/boundary_semantics.md``.
     """
 
 
@@ -70,7 +80,16 @@ def _asarray_batchable(x: ArrayLike, *, name: str) -> FloatArray:
 @dataclass(frozen=True, slots=True)
 class _LevinsonResult:
     """Terminal data returned by the correlation-to-PACF recursion for a
-    single sequence."""
+    single sequence.
+
+    ``alpha`` has ``order = alpha.size`` entries ``alpha_1, ..., alpha_order``
+    in the paper notation. ``sigma2``'s array position is an implementation
+    convention, not the paper subscript: position ``j`` holds the paper's
+    ``sigma_(j+1)^2``, so position 0 is the paper's ``sigma_1^2 = 1`` and
+    position ``order`` is the residual variance after ``alpha_order``. If
+    ``reached_boundary``, ``order = m - 1`` where ``A_m`` is the paper's
+    first singular Toeplitz matrix.
+    """
 
     r: FloatArray
     alpha: FloatArray
@@ -93,6 +112,11 @@ class _LevinsonBatchResult:
     and ``terminal_order[i] + 1`` entries of ``sigma2`` are meaningful --
     later entries are unwritten. ``phi`` holds the terminal predictor
     snapshot for that row, valid up to the same length.
+
+    ``sigma2``'s array position is an implementation convention: position
+    ``j`` holds the paper's ``sigma_(j+1)^2``. When ``reached_boundary[i]``,
+    ``terminal_order[i]`` is the paper's ``m - 1``, where ``A_m`` is the
+    first singular Toeplitz matrix for row ``i``.
     """
 
     alpha: FloatArray
@@ -124,6 +148,9 @@ def _levinson_correlations_batch(r2d: FloatArray) -> _LevinsonBatchResult:
     alpha = np.zeros((n_samples, n_max), dtype=np.float64)
     prediction = np.zeros((n_samples, n_max), dtype=np.float64)
     phi = np.zeros((n_samples, n_max), dtype=np.float64)
+    # sigma2[:, j] stores the paper's sigma_(j+1)^2 (an implementation
+    # array position, not the paper subscript); sigma2[:, 0] = 1 is the
+    # paper's recursion initialization sigma_1^2 = 1.
     sigma2 = np.zeros((n_samples, n_max + 1), dtype=np.float64)
     sigma2[:, 0] = 1.0
 
@@ -188,6 +215,7 @@ def _levinson_correlations_batch(r2d: FloatArray) -> _LevinsonBatchResult:
             phi[:, :idx] = np.where(update_mask[:, None], new_phi_head, phi_prev)
             phi[:, idx] = np.where(update_mask, alpha_n, phi[:, idx])
 
+        # Paper: sigma_(n+1)^2 = sigma_n^2 * (1 - alpha_n^2).
         sigma2_next = sigma2_current * (1.0 - alpha_n * alpha_n)
         clamp_mask = continue_now & (sigma2_next < 0.0) & (sigma2_next > -_ROUNDING_TOL)
         if np.any(clamp_mask):
@@ -196,6 +224,9 @@ def _levinson_correlations_batch(r2d: FloatArray) -> _LevinsonBatchResult:
 
         sigma2[:, n] = np.where(update_mask, sigma2_next, sigma2[:, n])
 
+        # At an exact boundary hit, n is the last PACF order: in the paper's
+        # boundary convention m = n + 1, so A_m = A_(n+1) is the first
+        # singular Toeplitz matrix.
         reached_boundary[boundary_hit_now] = True
         terminal_order[boundary_hit_now] = n
         active[boundary_hit_now] = False
@@ -324,12 +355,20 @@ class PrefixResult:
         The independent PACF prefix ``(alpha_1, ..., alpha_order)``. If
         ``reached_boundary``, the last entry is exactly ``+1`` or ``-1``.
     order
-        Number of coefficients in ``alpha``.
+        Number of coefficients in ``alpha``. In the paper notation, if
+        ``reached_boundary``, ``order = m - 1`` where ``A_m`` is the first
+        singular Toeplitz matrix; ``alpha_(m-1)`` is the last PACF defined
+        by the recursion.
     reached_boundary
-        Whether the recursion stopped because it hit the singular
-        boundary (``sigma_order^2 = 0``) rather than exhausting ``r``.
+        Whether the recursion stopped because it hit the singular boundary
+        rather than exhausting ``r``: ``|alpha_order| = 1``, so the next
+        Toeplitz matrix ``A_(order+1) = A_m`` is singular.
     sigma2
-        Innovation variances ``(sigma_0^2, ..., sigma_order^2)``.
+        Residual-variance trace stored in implementation order. Array
+        position ``j`` contains the paper quantity ``sigma_(j+1)^2``; hence
+        ``sigma2[0]`` is ``sigma_1^2 = 1``. If ``reached_boundary`` and
+        ``order = m - 1``, then ``sigma2[order]`` is the paper quantity
+        ``sigma_m^2 = 0``.
     predictor
         Terminal Levinson--Durbin predictor coefficients at the boundary
         (see :func:`ccf.bounds.extend_at_boundary`), or ``None``
@@ -402,10 +441,14 @@ def pacf(r: ArrayLike) -> FloatArray:
     Raises
     ------
     SingularToeplitzError
-        If the recursion reaches a degenerate boundary (``sigma_n^2 =
-        0``); use :func:`pacf_prefix` for the boundary-inclusive prefix,
-        or :func:`ccf.bounds.extend_at_boundary` for the
-        deterministic continuation past it.
+        If the recursion reaches a degenerate boundary. At an exact
+        mathematical boundary, ``|alpha_n| = 1`` implies
+        ``sigma_(n+1)^2 = 0``, i.e. ``A_(n+1)`` is the first singular
+        Toeplitz matrix; the float64 recursion also treats numerically
+        unresolved near-boundary cases according to ``_ROUNDING_TOL``. Use
+        :func:`pacf_prefix` for the boundary-inclusive prefix, or
+        :func:`ccf.bounds.extend_at_boundary` for the deterministic
+        continuation past it.
     ValueError
         If ``r`` is not an admissible correlation sequence.
 
@@ -501,7 +544,10 @@ def pacf_status(r: ArrayLike) -> PACFStatus:
     ``interior``, the order at which the boundary was reached if
     ``boundary``, or the first order at which admissibility failed if
     ``invalid`` -- matching :func:`pacf_prefix`'s ``order`` at the
-    boundary. See ``docs/boundary_semantics.md``.
+    boundary. In the paper notation, when ``boundary``, this ``order`` is
+    ``m - 1``, where ``A_m`` is the first singular Toeplitz matrix --
+    ``order`` itself is the API's recursion order, not the paper's ``m``.
+    See ``docs/boundary_semantics.md``.
 
     For a sequence that reaches a degenerate boundary, the classification
     describes the recursion up to that first boundary. Coefficients
