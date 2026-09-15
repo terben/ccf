@@ -14,6 +14,8 @@ $$
 
 where $r=(r_1,\ldots,r_N)$ denotes the correlation coefficients, $\alpha=(\alpha_1,\ldots,\alpha_N)$ the corresponding partial autocorrelations, and $y=(y_1,\ldots,y_N)$ their Fisher coordinates.
 
+The paper's central result is the identification of $\alpha_n$ with the coordinate $x_n$ introduced by Schneider & Hartlap (2009), $x_n = \alpha_n$, so the Fisher coordinate $y_n = \operatorname{atanh}(\alpha_n)$ is exactly their real-line coordinate.
+
 ## Installation
 
 Clone the repository and install the package in editable mode:
@@ -59,7 +61,7 @@ print(alpha_recovered)
 
 ### Inspect the admissible bounds
 
-For a sequence containing $r_1,\ldots,r_N$, `admissible_bounds` returns the admissible intervals for the supplied coefficients and, as the final entry, the interval for $r_{N+1}$:
+For a sequence containing $r_1,\ldots,r_N$, `admissible_bounds` returns, for each coefficient, the admissible interval $p_n - \sigma_n^2 \le r_n \le p_n + \sigma_n^2$, where $p_n$ is the linear prediction of $r_n$ and $\sigma_n^2$ the residual variance, and, as the final entry, the interval for $r_{N+1}$:
 
 ```python id="eqxux7"
 lower, upper = ccf.admissible_bounds(r)
@@ -75,6 +77,8 @@ For an interior point, transform between partial autocorrelations and Fisher coo
 y = ccf.fisher(alpha)
 alpha_recovered = ccf.inverse_fisher(y)
 ```
+
+Because $x_n = \alpha_n$, `ccf.fisher(alpha)` implements $y_n = \operatorname{atanh}(\alpha_n)$, exactly the Schneider--Hartlap Fisher coordinate.
 
 Thus the main numerical transformations are simply
 
@@ -93,7 +97,9 @@ r  <->  alpha  <->  y
 | Fisher coordinates               | `ccf.fisher(alpha)`          |
 | inverse Fisher transform         | `ccf.inverse_fisher(y)`      |
 
-The extended API provides diagnostics and boundary handling (`pacf_status`, `pacf_prefix`, `extend_at_boundary`), innovation variances and Jacobians, admissible-region volumes, and arbitrary-precision transformations.
+The extended API provides diagnostics and boundary handling (`pacf_status`, `pacf_prefix`, `extend_at_boundary`), residual variances (`innovation_variances`) and Jacobians, admissible-region volumes, and arbitrary-precision transformations.
+
+A correlation sequence can also reach a degenerate boundary: at the first singular Toeplitz matrix $A_m$, the residual variance vanishes ($\sigma_m^2 = 0$) and the last independent PACF coefficient saturates ($|\alpha_{m-1}| = 1$), so no further independent PACF coordinates exist beyond order $m-1$. Because $A_m$ contains only $r_0,\ldots,r_{m-1}$, not $r_m$, any correlation coefficients supplied beyond that order are not free -- they may still have a uniquely forced Toeplitz continuation. `pacf_status`, `pacf_prefix`, and `extend_at_boundary` detect and handle this case rather than raising; see [`docs/boundary_semantics.md`](docs/boundary_semantics.md) for the full semantics.
 
 ## Tutorial
 
