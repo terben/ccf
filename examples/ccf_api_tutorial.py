@@ -30,7 +30,7 @@ The core package depends only on NumPy. Arbitrary precision requires `mpmath`;
 the symbolic examples require `sympy`.
 """
 
-# %%
+# %% [markdown]
 """
 ## Suggested reading order for a new user
 
