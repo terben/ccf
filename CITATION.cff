@@ -16,6 +16,9 @@ authors:
 
 version: "1.0.1"
 
+doi: "10.5281/zenodo.22836553"
+date-released: "2026-09-18"
+
 repository-code: "https://github.com/terben/ccf"
 
 license: BSD-3-Clause

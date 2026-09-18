@@ -1,5 +1,6 @@
 # ccf — Constrained Correlation Functions
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22836553.svg)](https://doi.org/10.5281/zenodo.22836553)
 
 `ccf` is the reference implementation accompanying the paper *Natural Coordinates for Constrained Correlation Functions: Partial Autocorrelations and the Geometry of Positive Power Spectra*.
 
@@ -167,7 +168,7 @@ pytest
 
 If you use `ccf` in scientific work, please cite the software and the companion paper:
 
-> T. Erben (2026), *ccf: Partial autocorrelations and natural coordinates for correlation functions*, version 1.0.1. Zenodo.
+> T. Erben (2026), *ccf: Partial autocorrelations and natural coordinates for correlation functions*, version 1.0.1. Zenodo. [doi:10.5281/zenodo.22836553](https://doi.org/10.5281/zenodo.22836553)
 
 and
 
