@@ -1,9 +1,9 @@
 """Regression tests for figure_roundtrip.py's batched Panel A.
 
 paper_plot_scripts/figure_roundtrip.py runs as a standalone script (its
-own directory goes on sys.path for `from style import aa_plot`, matching
-the other figure scripts), so it is imported here the same way rather
-than as a package submodule.
+own directory goes on sys.path for imports from the local style module,
+matching the other figure scripts), so it is imported here the same way
+rather than as a package submodule.
 """
 
 import sys
