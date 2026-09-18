@@ -227,7 +227,7 @@ def make_figure(
     ax_b.set_title("B: arbitrary precision (mpmath)")
     ax_b.legend(framealpha=0.92, loc="best")
 
-    # constrained_layout is enabled globally by oja_plot.
+    # constrained_layout is enabled globally by the active journal plot style.
     fig.savefig(figure_path(path_stub.with_suffix(".pdf")))
     plt.close(fig)
 

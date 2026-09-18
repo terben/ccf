@@ -31,7 +31,7 @@ from scipy.stats import ks_2samp, kurtosis, skew
 import ccf
 from style import set_plot_style, figure_path
 
-# Configure Matplotlib for a two-column Astronomy & Astrophysics figure.
+# Configure Matplotlib for a two-column Open Journal figure.
 # The full figure width is taken from oja_plot; only the height ratio is set here.
 set_plot_style(
     journal="oja",
@@ -42,7 +42,7 @@ set_plot_style(
     constrained_layout=False,
 )
 
-# Preserve the exact A&A text width when saving.  The layout is controlled
+# Preserve the exact journal text width when saving.  The layout is controlled
 # explicitly below because this 2 x 3 panel arrangement benefits from tighter
 # spacing than Matplotlib's automatic layout engines provide.
 plt.rcParams["savefig.bbox"] = None
@@ -316,7 +316,7 @@ def make_figure(
         raise ValueError("statistics and lags must have the same length")
 
     # The version with numerical insets needs a taller density row.  Set the
-    # height explicitly while keeping the full A&A two-column width.
+    # height explicitly while keeping the full journal two-column width.
     height_ratio = 0.55 if show_insets else 0.47
     height_ratios = [2.2, 1.0] if show_insets else [1.62, 1.0]
 
