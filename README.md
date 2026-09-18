@@ -14,7 +14,7 @@ $$
 
 where $r=(r_1,\ldots,r_N)$ denotes the correlation coefficients, $\alpha=(\alpha_1,\ldots,\alpha_N)$ the corresponding partial autocorrelations, and $y=(y_1,\ldots,y_N)$ their Fisher coordinates.
 
-The paper's central result is the identification of $\alpha_n$ with the coordinate $x_n$ introduced by Schneider & Hartlap (2009), $x_n = \alpha_n$, so the Fisher coordinate $y_n = \operatorname{atanh}(\alpha_n)$ is exactly their real-line coordinate.
+The paper's central result is the identification of $\alpha_n$ with the coordinate $x_n$ introduced by Schneider & Hartlap (2009), $x_n = \alpha_n$, so the Fisher coordinate $y_n = \text{atanh}(\alpha_n)$ is exactly their real-line coordinate.
 
 ## Installation
 
@@ -78,7 +78,7 @@ y = ccf.fisher(alpha)
 alpha_recovered = ccf.inverse_fisher(y)
 ```
 
-Because $x_n = \alpha_n$, `ccf.fisher(alpha)` implements $y_n = \operatorname{atanh}(\alpha_n)$, exactly the Schneider--Hartlap Fisher coordinate.
+Because $x_n = \alpha_n$, `ccf.fisher(alpha)` implements $y_n = \text{atanh}(\alpha_n)$, exactly the Schneider--Hartlap Fisher coordinate.
 
 Thus the main numerical transformations are simply
 
