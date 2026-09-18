@@ -14,10 +14,7 @@ authors:
     orcid: "https://orcid.org/0009-0000-6513-0250"
     affiliation: "Argelander-Institut für Astronomie, Universität Bonn"
 
-version: "1.0.0"
-
-doi: "10.5281/zenodo.21890866"
-date-released: "2026-08-11"
+version: "1.0.1"
 
 repository-code: "https://github.com/terben/ccf"
 
